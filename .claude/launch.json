@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sekkeul-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "build/web", "-s"],
+      "port": 3000
+    }
+  ]
+}

@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>세끌 — 가계부 달력</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;600;700&family=DM+Serif+Display&family=Noto+Sans+KR:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:     #F8F7F5;
+  --surf:   #FFFFFF;
+  --ink:    #161513;
+  --sub:    #5E5C57;
+  --terti:  #908D86;
+  --line:   #DCD8D0;
+  --lineS:  #C7C2B8;
+  --accent: #1F5AE0;
+  --danger: #D9503F;
+  --income: #2FA37A;
+  --credit: #3B7DD8;
+  --debit:  #D69A3A;
+  --other:  #8E8B85;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:var(--bg);font-family:'DM Sans','Noto Sans KR',sans-serif;color:var(--ink);
+  display:flex;justify-content:center;align-items:flex-start;min-height:100vh;}
+.phone{width:390px;min-height:844px;background:var(--bg);
+  box-shadow:0 8px 48px rgba(0,0,0,.12);position:relative;overflow:hidden;}
+
+/* ── AppBar ── */
+.appbar{display:flex;align-items:center;justify-content:space-between;
+  padding:16px 16px 12px;border-bottom:1px solid var(--line);}
+.appbar-title{font-size:20px;font-weight:700;letter-spacing:-.3px;}
+.appbar-action{font-size:14px;color:var(--accent);opacity:0;transition:opacity .15s;cursor:pointer;
+  padding:4px 8px;}
+.appbar-action.visible{opacity:1;}
+.back-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+
+/* ── Month nav ── */
+.month-nav{display:flex;align-items:center;justify-content:space-between;
+  padding:6px 12px;border-bottom:1px solid var(--line);}
+.month-label{font-size:18px;font-weight:700;letter-spacing:-.5px;}
+.nav-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;border-radius:16px;transition:background .1s;}
+.nav-btn:hover{background:rgba(0,0,0,.05);}
+.nav-btn svg{fill:var(--ink);}
+
+/* ── Summary bar ── */
+.summary{display:flex;align-items:center;border-bottom:1px solid var(--line);padding:10px 0;}
+.summary-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;}
+.summary-divider{width:1px;height:32px;background:var(--line);}
+.sum-label{font-size:10px;font-weight:700;color:var(--terti);letter-spacing:1.5px;text-transform:uppercase;}
+.sum-amount{font-size:12.5px;font-weight:700;white-space:nowrap;}
+
+/* ── DOW row ── */
+.dow-row{display:grid;grid-template-columns:repeat(7,1fr);height:28px;border-bottom:1px solid var(--line);}
+.dow-cell{display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;
+  color:var(--terti);}
+.dow-cell:last-child{color:var(--danger);}
+
+/* ── Calendar ── */
+.cal-scroll{overflow-y:auto;padding:6px 10px 32px;}
+.cal-week{display:grid;grid-template-columns:repeat(7,1fr);height:62px;}
+.cal-cell{position:relative;margin:2px;border-radius:8px;
+  border:0.8px solid rgba(220,216,208,.6);overflow:hidden;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;padding:4px 3px;
+  transition:box-shadow .1s;user-select:none;}
+.cal-cell.empty{pointer-events:none;border-color:transparent;}
+.cal-cell.selected{border:2px solid var(--accent) !important;background:rgba(31,90,224,.06) !important;}
+.cal-cell.today{border:1.5px solid var(--accent);}
+.cal-cell.in-range{background:rgba(31,90,224,.08);border-color:rgba(31,90,224,.25);}
+.cal-cell-day{font-size:12px;font-weight:600;color:var(--ink);line-height:1;}
+.cal-cell.sunday .cal-cell-day{color:var(--danger);}
+.cal-cell-amounts{flex:1;display:flex;flex-direction:column;justify-content:center;
+  align-items:center;gap:1px;width:100%;}
+.cal-amt{font-size:8.5px;font-weight:700;white-space:nowrap;line-height:1.3;}
+
+/* bg tints */
+.bg-blue   {background:rgba(191,216,255,.55);}
+.bg-green  {background:rgba(191,239,212,.55);}
+.bg-orange {background:rgba(255,227,176,.55);}
+.bg-purple {background:rgba(226,200,255,.55);}
+.bg-income {background:rgba(47,163,122,.08);}
+
+/* ── Inline editor ── */
+.editor-row{padding:0 0 10px;}
+.editor{background:var(--surf);border:1px solid var(--lineS);border-radius:4px;
+  padding:16px 18px 18px;margin:4px 0;}
+.editor-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:3px;}
+.editor-title{font-size:19px;font-weight:600;letter-spacing:-.3px;color:var(--ink);line-height:1.25;}
+.editor-close{width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex-shrink:0;padding-left:8px;}
+.editor-caption{font-size:12.5px;color:var(--terti);margin-bottom:20px;}
+.field-row{display:flex;align-items:center;padding-bottom:7px;
+  border-bottom:1px solid var(--line);margin-bottom:16px;gap:0;}
+.field-row.focused{border-bottom-width:1.6px;}
+.field-label{font-size:13px;font-weight:600;color:var(--sub);white-space:nowrap;width:68px;}
+.field-row.focused .field-label{color:var(--field-color);}
+.field-input{flex:1;background:none;border:none;outline:none;text-align:right;
+  font-size:20px;font-weight:700;font-family:'DM Sans','Noto Sans KR',sans-serif;
+  color:var(--ink);caret-color:var(--field-color,var(--accent));min-width:0;}
+.field-input::placeholder{color:var(--terti);font-weight:300;}
+.field-unit{font-size:13px;color:var(--sub);padding-left:7px;}
+.actions{display:flex;gap:10px;margin-top:24px;}
+.btn-delete{padding:14px 20px;border:1px solid var(--danger);border-radius:4px;
+  font-size:14px;font-weight:600;color:var(--danger);cursor:pointer;background:none;
+  font-family:inherit;}
+.btn-save{flex:1;padding:16px;background:var(--ink);border-radius:4px;border:none;
+  font-size:15px;font-weight:700;color:var(--bg);cursor:pointer;font-family:inherit;}
+
+/* ── Range label ── */
+.range-label{font-size:11.5px;color:var(--accent);font-weight:600;text-align:center;
+  padding:6px 0 2px;letter-spacing:.3px;}
+
+svg{display:block;}
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- AppBar -->
+  <div class="appbar">
+    <div class="back-btn">
+      <svg width="22" height="22" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="#161513"/></svg>
+    </div>
+    <span class="appbar-title">가계부</span>
+    <span class="appbar-action" id="cancelBtn" onclick="deselect()">취소</span>
+  </div>
+
+  <!-- Month nav -->
+  <div class="month-nav">
+    <div class="nav-btn">
+      <svg width="22" height="22" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+    </div>
+    <span class="month-label" id="monthLabel"></span>
+    <div class="nav-btn">
+      <svg width="22" height="22" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary">
+    <div class="summary-item">
+      <span class="sum-label">수입</span>
+      <span class="sum-amount" id="sumIncome" style="color:var(--income)"></span>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-item">
+      <span class="sum-label">지출</span>
+      <span class="sum-amount" id="sumExpense" style="color:var(--danger)"></span>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-item">
+      <span class="sum-label">잔액</span>
+      <span class="sum-amount" id="sumBalance" style="color:var(--ink)"></span>
+    </div>
+  </div>
+
+  <!-- DOW row -->
+  <div class="dow-row">
+    <div class="dow-cell">월</div><div class="dow-cell">화</div>
+    <div class="dow-cell">수</div><div class="dow-cell">목</div>
+    <div class="dow-cell">금</div><div class="dow-cell">토</div>
+    <div class="dow-cell">일</div>
+  </div>
+
+  <!-- Calendar -->
+  <div class="cal-scroll" id="calScroll"></div>
+</div>
+
+<script>
+const YEAR = 2026, MONTH = 6, TODAY = 19;
+const FMT = new Intl.NumberFormat('ko-KR');
+const DAYS = ['월','화','수','목','금','토','일'];
+
+const expenses = {
+  3:  {credit:45000},
+  5:  {debit:12000},
+  7:  {credit:89000, debit:15000},
+  10: {other:30000},
+  11: {credit:120000},
+  14: {debit:8500},
+  17: {credit:67000},
+  18: {credit:55000, other:20000},
+  21: {debit:43000},
+  24: {credit:98000},
+  27: {debit:18000},
+};
+const income = {1: 3200000};
+
+const totalIncome = Object.values(income).reduce((a,b)=>a+b,0);
+const totalExpense = Object.values(expenses).flatMap(Object.values).reduce((a,b)=>a+b,0);
+
+document.getElementById('monthLabel').textContent = `${YEAR}. ${MONTH}`;
+document.getElementById('sumIncome').textContent  = FMT.format(totalIncome)  + '원';
+document.getElementById('sumExpense').textContent = FMT.format(totalExpense) + '원';
+document.getElementById('sumBalance').textContent = FMT.format(totalIncome - totalExpense) + '원';
+
+function daysInMonth(y,m){return new Date(y,m,0).getDate();}
+function firstOffset(y,m){let d=new Date(y,m-1,1).getDay(); return d===0?6:d-1;}
+
+const DAYS_IN = daysInMonth(YEAR,MONTH);
+const OFFSET   = firstOffset(YEAR,MONTH);
+
+let selected = new Set();
+let dragStart = null, isDragging = false;
+
+function bgClass(day){
+  const e = expenses[day];
+  const i = income[day];
+  if(!e && !i) return '';
+  if(i && !e) return 'bg-income';
+  const cats = Object.keys(e||{});
+  if(cats.length>1) return 'bg-purple';
+  if(cats[0]==='credit') return 'bg-blue';
+  if(cats[0]==='debit')  return 'bg-green';
+  if(cats[0]==='other')  return 'bg-orange';
+  return '';
+}
+
+function amtStr(n){
+  if(n>=10000) return `${Math.round(n/10000)}만`;
+  return FMT.format(n);
+}
+
+function buildCell(day){
+  const el = document.createElement('div');
+  el.className = 'cal-cell';
+  el.dataset.day = day;
+  const dow = (OFFSET + day - 1) % 7; // 0=Mon … 6=Sun
+  if(dow===6) el.classList.add('sunday');
+  if(day===TODAY) el.classList.add('today');
+  const bg = bgClass(day);
+  if(bg) el.classList.add(bg);
+
+  const dayEl = document.createElement('div');
+  dayEl.className = 'cal-cell-day';
+  dayEl.textContent = day;
+  el.appendChild(dayEl);
+
+  const amtsEl = document.createElement('div');
+  amtsEl.className = 'cal-cell-amounts';
+  const inc = income[day];
+  const exp = expenses[day]||{};
+  if(inc){
+    const t=document.createElement('div');
+    t.className='cal-amt';
+    t.style.color='var(--income)';
+    t.textContent='+'+amtStr(inc);
+    amtsEl.appendChild(t);
+  }
+  if(exp.credit){
+    const t=document.createElement('div');
+    t.className='cal-amt';
+    t.style.color='var(--credit)';
+    t.textContent=amtStr(exp.credit);
+    amtsEl.appendChild(t);
+  }
+  if(exp.debit){
+    const t=document.createElement('div');
+    t.className='cal-amt';
+    t.style.color='var(--debit)';
+    t.textContent=amtStr(exp.debit);
+    amtsEl.appendChild(t);
+  }
+  if(exp.other){
+    const t=document.createElement('div');
+    t.className='cal-amt';
+    t.style.color='var(--other)';
+    t.textContent=amtStr(exp.other);
+    amtsEl.appendChild(t);
+  }
+  el.appendChild(amtsEl);
+  return el;
+}
+
+function dayAtPoint(x,y){
+  const cells = document.querySelectorAll('.cal-cell[data-day]');
+  for(const c of cells){
+    const r = c.getBoundingClientRect();
+    if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom) return +c.dataset.day;
+  }
+  return null;
+}
+
+function rangeBetween(a,b){
+  const s=Math.min(a,b), e=Math.max(a,b);
+  const r=new Set();
+  for(let i=s;i<=e;i++) r.add(i);
+  return r;
+}
+
+function updateCellStyles(){
+  document.querySelectorAll('.cal-cell[data-day]').forEach(c=>{
+    const day=+c.dataset.day;
+    c.classList.toggle('selected', selected.size===1 && selected.has(day));
+    c.classList.toggle('in-range', selected.size>1 && selected.has(day));
+  });
+}
+
+function deselect(){
+  selected.clear();
+  updateCellStyles();
+  renderEditor();
+  document.getElementById('cancelBtn').classList.remove('visible');
+}
+
+function renderEditor(){
+  const scroll = document.getElementById('calScroll');
+  // remove existing editors
+  scroll.querySelectorAll('.editor-row,.range-label').forEach(e=>e.remove());
+  if(selected.size===0) return;
+
+  const sorted = [...selected].sort((a,b)=>a-b);
+  const isRange = sorted.length>1;
+
+  const wd = n=>{const d=(OFFSET+n-1)%7; return DAYS[d];};
+  const title = isRange
+    ? `${MONTH}월 ${sorted[0]}일 – ${MONTH}월 ${sorted[sorted.length-1]}일`
+    : `${MONTH}월 ${sorted[0]}일 (${wd(sorted[0])})`;
+  const caption = isRange
+    ? `${sorted.length}일 동안 같은 금액으로 기록돼요`
+    : '이 날의 수입과 지출을 적어요';
+
+  // find which week row the max selected date lives in
+  const maxDay = sorted[sorted.length-1];
+  const rowIndex = Math.floor((OFFSET + maxDay - 1) / 7);
+  const weeks = scroll.querySelectorAll('.cal-week');
+  const insertAfter = weeks[rowIndex];
+
+  const editorRow = document.createElement('div');
+  editorRow.className = 'editor-row';
+
+  const editorEl = document.createElement('div');
+  editorEl.className = 'editor';
+
+  const inc = !isRange ? (income[sorted[0]]||0) : 0;
+  const cr  = !isRange ? (expenses[sorted[0]]?.credit||0) : 0;
+  const db  = !isRange ? (expenses[sorted[0]]?.debit ||0) : 0;
+  const ot  = !isRange ? (expenses[sorted[0]]?.other ||0) : 0;
+  const hasData = !isRange && (inc||cr||db||ot);
+
+  editorEl.innerHTML = `
+  <div class="editor-header">
+    <div class="editor-title">${title}</div>
+    <div class="editor-close" onclick="deselect()">
+      <svg width="20" height="20" viewBox="0 0 24 24">
+        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="#5E5C57"/>
+      </svg>
+    </div>
+  </div>
+  <div class="editor-caption">${caption}</div>
+  ${fieldHtml('수익',    'income', inc, 'var(--income)')}
+  ${fieldHtml('신용카드','credit', cr,  'var(--credit)')}
+  ${fieldHtml('체크/현금','debit', db,  'var(--debit)')}
+  ${fieldHtml('기타',    'other',  ot,  'var(--other)')}
+  <div class="actions">
+    ${hasData ? `<button class="btn-delete" onclick="deselect()">삭제</button>` : ''}
+    <button class="btn-save" onclick="deselect()">${hasData?'수정':'저장'}</button>
+  </div>`;
+
+  // focus animations
+  editorEl.querySelectorAll('.field-input').forEach(input=>{
+    const row = input.closest('.field-row');
+    const color = row.dataset.color;
+    input.style.setProperty('--field-color', color);
+    row.style.setProperty('--field-color', color);
+    input.addEventListener('focus', ()=>{
+      row.classList.add('focused');
+      row.style.borderBottomColor=color;
+      row.style.borderBottomWidth='1.6px';
+      row.querySelector('.field-label').style.color=color;
+    });
+    input.addEventListener('blur', ()=>{
+      row.classList.remove('focused');
+      row.style.borderBottomColor='var(--line)';
+      row.style.borderBottomWidth='1px';
+      row.querySelector('.field-label').style.color='var(--sub)';
+    });
+    input.addEventListener('input', ()=>{
+      let n = input.value.replace(/[^0-9]/g,'');
+      let f = n ? FMT.format(+n) : '';
+      if(f!==input.value){
+        input.value=f;
+      }
+    });
+  });
+
+  editorRow.appendChild(editorEl);
+  if(insertAfter && insertAfter.nextSibling){
+    scroll.insertBefore(editorRow, insertAfter.nextSibling);
+  } else {
+    scroll.appendChild(editorRow);
+  }
+}
+
+function fieldHtml(label, key, value, color){
+  const val = value ? FMT.format(value) : '';
+  return `<div class="field-row" data-color="${color}">
+    <span class="field-label">${label}</span>
+    <input class="field-input" type="tel" placeholder="0" value="${val}" inputmode="numeric">
+    <span class="field-unit">원</span>
+  </div>`;
+}
+
+function buildCalendar(){
+  const scroll = document.getElementById('calScroll');
+  scroll.innerHTML = '';
+
+  let dayCount = 1;
+  for(let row=0; row<6; row++){
+    const firstIdx = row*7 - OFFSET;
+    if(firstIdx >= DAYS_IN) break;
+    const week = document.createElement('div');
+    week.className = 'cal-week';
+    for(let col=0; col<7; col++){
+      const idx = row*7 + col - OFFSET;
+      if(idx<0 || idx>=DAYS_IN){
+        const e=document.createElement('div');
+        e.className='cal-cell empty';
+        week.appendChild(e);
+      } else {
+        week.appendChild(buildCell(idx+1));
+      }
+    }
+    scroll.appendChild(week);
+  }
+}
+
+// ── Drag logic ──────────────────────────────────────────────
+const scroll = document.getElementById('calScroll');
+
+scroll.addEventListener('pointerdown', e=>{
+  const day = dayAtPoint(e.clientX, e.clientY);
+  if(day===null) return;
+  dragStart = day; isDragging = false;
+  scroll.setPointerCapture(e.pointerId);
+});
+
+scroll.addEventListener('pointermove', e=>{
+  if(dragStart===null) return;
+  const day = dayAtPoint(e.clientX, e.clientY);
+  if(day===null) return;
+  if(day!==dragStart) isDragging=true;
+  if(isDragging){
+    selected = rangeBetween(dragStart, day);
+    updateCellStyles();
+  }
+});
+
+scroll.addEventListener('pointerup', e=>{
+  if(dragStart===null) return;
+  if(!isDragging){
+    const day = dragStart;
+    if(selected.size===1 && selected.has(day)){
+      selected.clear();
+    } else {
+      selected = new Set([day]);
+    }
+  }
+  isDragging=false;
+  dragStart=null;
+  updateCellStyles();
+  renderEditor();
+  document.getElementById('cancelBtn').classList.toggle('visible', selected.size>0);
+});
+
+buildCalendar();
+</script>
+</body>
+</html>

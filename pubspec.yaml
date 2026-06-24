@@ -1,0 +1,51 @@
+name: secul
+description: 세끌 — 직장인·프리랜서·N잡러를 위한 온디바이스 종합소득세·연말정산 도우미 (민감정보는 기기에만 저장)
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  cupertino_icons: ^1.0.3
+  sqflite: ^2.3.0
+  path: ^1.9.0
+  intl: ^0.20.2
+  flutter_local_notifications: ^22.0.1
+  timezone: ^0.11.0
+  google_fonts: ^6.2.1
+  # ① 연말정산 자료 파서 — PDF 텍스트 추출(순수 Dart) + 파일 선택
+  syncfusion_flutter_pdf: ^28.1.33
+  file_picker: ^8.1.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.3
+
+flutter:
+  uses-material-design: true
+
+# 앱 아이콘 — 블루프린트 톤(크림 #F8F7F5 + 잉크 세리프 '세끌').
+# 생성: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#F8F7F5"
+  adaptive_icon_foreground: "assets/icon/icon_fg.png"
+  remove_alpha_ios: true
+
+# 스플래시 — 동일 톤. 생성: dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#F8F7F5"
+  image: "assets/icon/icon_fg.png"
+  android_12:
+    color: "#F8F7F5"
+    image: "assets/icon/icon_fg.png"
