@@ -177,7 +177,7 @@ class _YearEndTaxScreenState extends State<YearEndTaxScreen> {
       int creditTotal = 0;
       int debitTotal = 0;
       for (final exp in expenses) {
-        if (exp.category == '신용카드') {
+        if (exp.paymentMethod == '신용카드') {
           creditTotal += exp.amount;
         } else {
           debitTotal += exp.amount;

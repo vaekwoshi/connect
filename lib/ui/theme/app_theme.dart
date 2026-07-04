@@ -91,6 +91,20 @@ class AppTheme {
   static const Color darkAccent          = Color(0xFF6A93F0); // 도면 블루
   static const Color darkAccentSoft      = Color(0xFF16213B); // 블루 틴트
 
+  // ──────────────────────────────────────────────
+  // 타입 스케일 상수 — 이 값 외 사용 금지
+  // ──────────────────────────────────────────────
+  static const double tsXS   = 11;   // 마이크로 라벨 / legend / eyebrow
+  static const double tsSM   = 12;   // caption / meta / 부차 정보
+  static const double tsMD   = 13;   // compact UI / 탭 / 날짜 숫자
+  static const double tsBase = 14;   // 기본 본문 / 목록 항목
+  static const double tsLG   = 15;   // 섹션 제목 / CTA
+  static const double tsXL   = 17;   // sans UI 헤더 (제목용 sans)
+  static const double serifSM = 17;  // 인라인 serif / 다이얼로그 헤더
+  static const double serifMD = 22;  // AppBar 제목
+  static const double serifLG = 28;  // 섹션 헤딩 / 빈 상태 제목
+  static const double serifXL = 34;  // 표시 숫자
+
   // 시맨틱 (무광 톤에 맞춘 절제된 채도)
   static const Color colorSuccess = Color(0xFF2FA37A);
   static const Color colorWarning = Color(0xFFD69A3A);
@@ -331,6 +345,45 @@ class AppTheme {
       color: accentSoft(context),
       borderRadius: BorderRadius.circular(borderRadius.clamp(0.0, 6.0)),
       border: Border.all(color: accentColor(context), width: 1),
+    );
+  }
+
+  /// 기능 패널 — 표면색 채움 + 1px 테두리 + 모서리 4 + 패딩. 그림자 0(블루프린트).
+  /// 홈의 나열식 섹션을 하나의 카드로 묶어 "어디부터 어디까지가 한 기능인지" 보이게 한다.
+  static Widget panel(
+    BuildContext context, {
+    required Widget child,
+    EdgeInsetsGeometry padding = const EdgeInsets.fromLTRB(16, 16, 16, 16),
+    bool accent = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: accent ? accentSoft(context) : surface(context),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: accent ? accentColor(context) : line(context), width: 1),
+      ),
+      child: child,
+    );
+  }
+
+  /// 패널 헤더 — 작은 선 아이콘 + 라벨(대문자 도면 주석) + 우측 액션.
+  /// 패널이 무슨 기능을 하는지 한 줄로 알려준다.
+  static Widget panelHeader(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    Widget? trailing,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: inkTertiary(context)),
+        const SizedBox(width: 7),
+        Text(label.toUpperCase(), style: AppTheme.label(context)),
+        const Spacer(),
+        if (trailing != null) trailing,
+      ],
     );
   }
 

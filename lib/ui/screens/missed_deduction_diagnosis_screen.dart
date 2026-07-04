@@ -105,7 +105,7 @@ class _MissedDeductionDiagnosisScreenState extends State<MissedDeductionDiagnosi
             Text('연말정산에 안 넣은\n공제를 골라보세요', style: AppTheme.serif(28, ink, spacing: -0.5, height: 1.2)),
             const SizedBox(height: 10),
             Text('회사 연말정산 때 빠뜨린 공제를 고르면, 5월 종합소득세 신고로 얼마를 더 돌려받을 수 있는지 계산해드려요.',
-                style: AppTheme.sans(13.5, sub, height: 1.55)),
+                style: AppTheme.sans(14, sub, height: 1.55)),
 
             // ── 기준 금액 ──
             const SizedBox(height: 24),
@@ -121,7 +121,7 @@ class _MissedDeductionDiagnosisScreenState extends State<MissedDeductionDiagnosi
             const SizedBox(height: 26),
             Text('빠뜨린 공제'.toUpperCase(), style: AppTheme.label(context)),
             const SizedBox(height: 6),
-            Text('해당하는 항목을 고르고 실제 지출액을 적어주세요.', style: AppTheme.sans(12.5, sub)),
+            Text('해당하는 항목을 고르고 실제 지출액을 적어주세요.', style: AppTheme.sans(12, sub)),
             const SizedBox(height: 14),
             DeductionChecklist(
               initialAmounts: _initialAmounts,
@@ -172,7 +172,7 @@ class _MissedDeductionDiagnosisScreenState extends State<MissedDeductionDiagnosi
         Icon(Icons.checklist_rounded, size: 20, color: AppTheme.inkTertiary(context)),
         const SizedBox(width: 12),
         Expanded(child: Text('빠뜨린 공제를 골라보세요. 더 돌려받을 금액을 계산해드려요.',
-            style: AppTheme.sans(13.5, AppTheme.ink(context), weight: FontWeight.w600, height: 1.4))),
+            style: AppTheme.sans(14, AppTheme.ink(context), weight: FontWeight.w600, height: 1.4))),
       ]),
     );
   }
@@ -194,7 +194,7 @@ class _MissedDeductionDiagnosisScreenState extends State<MissedDeductionDiagnosi
             Text('원', style: AppTheme.sans(15, sub, weight: FontWeight.w600)),
           ]),
           const SizedBox(height: 6),
-          Text('5월 종합소득세 신고로 돌려받을 수 있어요.', style: AppTheme.sans(12.5, sub, height: 1.45)),
+          Text('5월 종합소득세 신고로 돌려받을 수 있어요.', style: AppTheme.sans(12, sub, height: 1.45)),
         ],
       ),
     );
@@ -238,7 +238,7 @@ class _MissedDeductionDiagnosisScreenState extends State<MissedDeductionDiagnosi
         alignment: Alignment.center,
         decoration: BoxDecoration(color: AppTheme.ink(context), borderRadius: BorderRadius.circular(4)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(label, style: AppTheme.sans(15.5, bg, weight: FontWeight.w700)),
+          Text(label, style: AppTheme.sans(15, bg, weight: FontWeight.w700)),
           const SizedBox(width: 8),
           Icon(Icons.arrow_forward, size: 16, color: bg),
         ]),

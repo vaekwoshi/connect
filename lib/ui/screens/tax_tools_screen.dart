@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'forms_screen.dart';
 
+import 'document_checklist_screen.dart';
 import 'tax_record_import_screen.dart';
 import 'correction_request_screen.dart';
 import 'freelancer_import_screen.dart';
@@ -19,27 +21,28 @@ import 'freelancer_book_screen.dart';
 /// 하단 빠르게 계산(단발 계산기). 구 "5월에 챙길 항목" 나열을 대체.
 class TaxToolsScreen extends StatelessWidget {
   final String userType;
-  const TaxToolsScreen({super.key, required this.userType});
+
+  /// 하단 탭에 끼워질 때(true)는 뒤로가기 leading을 숨긴다. push 진입 시 false.
+  final bool embedded;
+  const TaxToolsScreen({super.key, required this.userType, this.embedded = false});
 
   @override
   Widget build(BuildContext context) {
     final ink = AppTheme.ink(context);
     final sub = AppTheme.inkSecondary(context);
-    final stages = taxPipelineFor(userType);
-    final quick = taxQuickCalcsFor(userType);
-    final record = taxRecordEntryFor(userType);
-    final amended = taxAmendedEntryFor(userType);
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: sub),
-          onPressed: () => Navigator.pop(context),
-        ),
+        automaticallyImplyLeading: false,
+        leading: embedded
+            ? null
+            : IconButton(
+                icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: sub),
+                onPressed: () => Navigator.pop(context),
+              ),
       ),
       body: SafeArea(
         top: false,
@@ -48,51 +51,71 @@ class TaxToolsScreen extends StatelessWidget {
           children: [
             Text('세무 도구', style: AppTheme.serif(28, ink, spacing: -0.5)),
             const SizedBox(height: 10),
-            Text(_pipelineIntroFor(userType), style: AppTheme.sans(13.5, sub, height: 1.55)),
+            Text(_pipelineIntroFor(userType), style: AppTheme.sans(14, sub, height: 1.55)),
             const SizedBox(height: 28),
-
-            // ── 행1: 연말정산/사업소득 기록하기 ──
-            Text('기록'.toUpperCase(), style: AppTheme.label(context)),
-            const SizedBox(height: 6),
-            AppTheme.hairline(context),
-            _menuRow(context, record),
-            AppTheme.hairline(context),
-
-            const SizedBox(height: 28),
-
-            // ── 행2: 종합소득세 신고 준비 3단계 (번호 = 실제 순서) ──
-            Text('종합소득세 신고 준비'.toUpperCase(), style: AppTheme.label(context)),
-            const SizedBox(height: 14),
-            for (int i = 0; i < stages.length; i++)
-              _stageRow(context, i + 1, stages[i], isLast: i == stages.length - 1),
-
-            // ── 행3: 경정청구 준비하기 (직장인·N잡러) ──
-            if (amended != null) ...[
-              const SizedBox(height: 28),
-              Text('경정청구'.toUpperCase(), style: AppTheme.label(context)),
-              const SizedBox(height: 6),
-              AppTheme.hairline(context),
-              _menuRow(context, amended),
-              AppTheme.hairline(context),
-            ],
-
-            const SizedBox(height: 30),
-
-            // ── 하단: 빠르게 계산 (평면, 무분류) ──
-            Text('빠르게 계산'.toUpperCase(), style: AppTheme.label(context)),
-            const SizedBox(height: 6),
-            AppTheme.hairline(context),
-            for (final c in quick) ...[
-              _quickRow(context, c),
-              AppTheme.hairline(context),
-            ],
+            TaxToolsMenu(userType: userType),
           ],
         ),
       ),
     );
   }
+}
 
-  /// 파이프라인 단계 — 좌측 번호 + 세로 연결선(도면 시퀀스).
+/// 세무 도구 메뉴 본문 — 홈(리마인더 아래)과 '세무' 탭이 함께 쓰는 단일 위젯.
+/// 기록 -> 종합소득세 신고 준비(3단계) -> 경정청구 -> 빠르게 계산(서랍).
+class TaxToolsMenu extends StatefulWidget {
+  final String userType;
+  const TaxToolsMenu({super.key, required this.userType});
+
+  @override
+  State<TaxToolsMenu> createState() => _TaxToolsMenuState();
+}
+
+class _TaxToolsMenuState extends State<TaxToolsMenu> {
+  String get userType => widget.userType;
+
+  @override
+  Widget build(BuildContext context) {
+    final stages = taxPipelineFor(userType);
+    final record = taxRecordEntryFor(userType);
+    final amended = taxAmendedEntryFor(userType);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('기록'.toUpperCase(), style: AppTheme.label(context)),
+        const SizedBox(height: 6),
+        AppTheme.hairline(context),
+        _menuRow(context, record),
+        AppTheme.hairline(context),
+        const SizedBox(height: 28),
+        Text('종합소득세 신고 준비'.toUpperCase(), style: AppTheme.label(context)),
+        const SizedBox(height: 14),
+        for (int i = 0; i < stages.length; i++)
+          _stageRow(context, i + 1, stages[i], isLast: i == stages.length - 1),
+        if (amended != null) ...[
+          const SizedBox(height: 28),
+          Text('경정청구'.toUpperCase(), style: AppTheme.label(context)),
+          const SizedBox(height: 6),
+          AppTheme.hairline(context),
+          _menuRow(context, amended),
+          AppTheme.hairline(context),
+        ],
+        const SizedBox(height: 28),
+        Text('서류 준비'.toUpperCase(), style: AppTheme.label(context)),
+        const SizedBox(height: 6),
+        AppTheme.hairline(context),
+        _checklistRow(context),
+        AppTheme.hairline(context),
+        const SizedBox(height: 28),
+        Text('서식'.toUpperCase(), style: AppTheme.label(context)),
+        const SizedBox(height: 6),
+        AppTheme.hairline(context),
+        _formsRow(context),
+        AppTheme.hairline(context),
+      ],
+    );
+  }
+
   Widget _stageRow(BuildContext context, int n, TaxStage stage, {required bool isLast}) {
     final ink = AppTheme.ink(context);
     final sub = AppTheme.inkSecondary(context);
@@ -106,7 +129,6 @@ class TaxToolsScreen extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 번호 + 연결선
             Column(
               children: [
                 Container(
@@ -117,7 +139,7 @@ class TaxToolsScreen extends StatelessWidget {
                     border: Border.all(color: line, width: 1),
                     borderRadius: BorderRadius.circular(3),
                   ),
-                  child: Text('$n', style: AppTheme.serif(16, ink, spacing: 0, height: 1.0)),
+                  child: Text('$n', style: AppTheme.serif(17, ink, spacing: 0, height: 1.0)),
                 ),
                 if (!isLast)
                   Expanded(child: Container(width: 1, color: line)),
@@ -132,7 +154,7 @@ class TaxToolsScreen extends StatelessWidget {
                   children: [
                     Row(children: [
                       Flexible(child: Text(stage.title,
-                          style: AppTheme.sans(16, ink, weight: FontWeight.w700, spacing: -0.2))),
+                          style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2))),
                       if (stage.badge != null) ...[
                         const SizedBox(width: 8),
                         AppTheme.blueprintBadge(context, stage.badge!),
@@ -155,7 +177,6 @@ class TaxToolsScreen extends StatelessWidget {
     );
   }
 
-  /// 단일 메뉴 행 (기록·경정청구) — 번호 없는 진입 행.
   Widget _menuRow(BuildContext context, TaxStage stage) {
     final ink = AppTheme.ink(context);
     final sub = AppTheme.inkSecondary(context);
@@ -170,14 +191,67 @@ class TaxToolsScreen extends StatelessWidget {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Flexible(child: Text(stage.title, style: AppTheme.sans(15.5, ink, weight: FontWeight.w700, spacing: -0.2))),
+                Flexible(child: Text(stage.title, style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2))),
                 if (stage.badge != null) ...[
                   const SizedBox(width: 8),
                   AppTheme.blueprintBadge(context, stage.badge!),
                 ],
               ]),
               const SizedBox(height: 3),
-              Text(stage.subtitle, style: AppTheme.sans(12.5, sub, height: 1.4)),
+              Text(stage.subtitle, style: AppTheme.sans(12, sub, height: 1.4)),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right_rounded, size: 20, color: tert),
+        ]),
+      ),
+    );
+  }
+
+  Widget _formsRow(BuildContext context) {
+    final ink = AppTheme.ink(context);
+    final sub = AppTheme.inkSecondary(context);
+    final tert = AppTheme.inkTertiary(context);
+    return GestureDetector(
+      onTap: () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => FormsScreen(userType: userType))),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('서식 14종', style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
+              const SizedBox(height: 3),
+              Text('연말정산·종소세·경정청구 등 자주 쓰는 서식 모음',
+                  style: AppTheme.sans(12, sub, height: 1.4)),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right_rounded, size: 20, color: tert),
+        ]),
+      ),
+    );
+  }
+
+  Widget _checklistRow(BuildContext context) {
+    final ink = AppTheme.ink(context);
+    final sub = AppTheme.inkSecondary(context);
+    final tert = AppTheme.inkTertiary(context);
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => DocumentChecklistScreen(userType: userType))),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('서류 체크리스트',
+                  style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
+              const SizedBox(height: 3),
+              Text('홈택스 간소화에 없는 서류만 모아 보여줘요',
+                  style: AppTheme.sans(12, sub, height: 1.4)),
             ]),
           ),
           const SizedBox(width: 8),
@@ -202,7 +276,7 @@ class TaxToolsScreen extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(item.title, style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
               const SizedBox(height: 3),
-              Text(item.subtitle, style: AppTheme.sans(12.5, sub, height: 1.4)),
+              Text(item.subtitle, style: AppTheme.sans(12, sub, height: 1.4)),
             ]),
           ),
           const SizedBox(width: 8),
@@ -211,6 +285,7 @@ class TaxToolsScreen extends StatelessWidget {
       ),
     );
   }
+
 }
 
 // ── 데이터 모델 (홈과 공유) ──────────────────────────────────────────

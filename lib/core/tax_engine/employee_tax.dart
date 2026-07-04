@@ -156,14 +156,17 @@ class EmployeeTaxCalculator {
   static double calculatePensionAccountTaxCredit({
     required double pensionSavingsPayment,    // 연금저축 납입액
     required double retirementPensionPayment, // 퇴직연금(DC/IRP) 납입액
-    required double grossIncome,              // 총급여(직장인) 또는 환산 기준소득
+    required double grossIncome,              // 총급여(직장인) 또는 종합소득금액
+    bool isSalariedIncome = true,             // true=근로(5,500만 기준), false=종합(4,500만 기준)
   }) {
     if (pensionSavingsPayment <= 0 && retirementPensionPayment <= 0) return 0.0;
     final double eligibleSavings =
         pensionSavingsPayment > 6000000.0 ? 6000000.0 : pensionSavingsPayment;
     double eligibleTotal = eligibleSavings + retirementPensionPayment;
     if (eligibleTotal > 9000000.0) eligibleTotal = 9000000.0;
-    final double rate = grossIncome <= 55000000.0 ? 0.15 : 0.12;
+    final double threshold = isSalariedIncome ? 55000000.0 : 45000000.0;
+    // 지방소득세 포함: 15%×1.1=16.5% / 12%×1.1=13.2%
+    final double rate = grossIncome <= threshold ? 0.165 : 0.132;
     return TaxRates.truncateWon(eligibleTotal * rate);
   }
 

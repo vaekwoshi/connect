@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>세끌 개인정보처리방침</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F8F7F5; --ink:#161513; --sub:#5E5C57; --tert:#6B6862;
+    --line:#E2DFDA; --accent:#1F5AE0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Noto Sans KR',sans-serif; line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:720px; margin:0 auto; padding:72px 24px 96px}
+  .mark{
+    display:inline-block; border:1px solid var(--ink); border-radius:3px;
+    padding:5px 9px; font-family:'Noto Serif KR',serif; font-size:18px; font-weight:500;
+    letter-spacing:-0.5px; margin-bottom:28px;
+  }
+  h1{font-family:'Noto Serif KR',serif; font-size:34px; font-weight:700; letter-spacing:-1px; line-height:1.25; margin-bottom:10px}
+  .date{font-size:13px; color:var(--tert); letter-spacing:1px; text-transform:uppercase}
+  .rule{height:1px; background:var(--line); margin:32px 0}
+  h2{font-family:'Noto Serif KR',serif; font-size:21px; font-weight:700; letter-spacing:-0.5px; margin:40px 0 14px}
+  p{color:var(--sub); margin:12px 0; font-size:15px}
+  strong{color:var(--ink); font-weight:700}
+  ul{margin:12px 0 12px 4px; list-style:none}
+  li{color:var(--sub); font-size:15px; padding-left:18px; position:relative; margin:8px 0}
+  li::before{content:""; position:absolute; left:0; top:11px; width:6px; height:6px; background:var(--accent)}
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:14.5px}
+  th,td{text-align:left; padding:12px 10px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{color:var(--tert); font-weight:700; font-size:12px; letter-spacing:1px; text-transform:uppercase}
+  td:first-child{color:var(--ink); font-weight:500; white-space:nowrap; padding-right:20px}
+  td:last-child{color:var(--sub)}
+  .accent{color:var(--accent)}
+  a{color:var(--accent); text-decoration:none}
+  .foot{margin-top:48px; padding-top:24px; border-top:1px solid var(--line); font-size:13.5px; color:var(--tert); font-style:italic}
+  @media (max-width:520px){ .wrap{padding:48px 20px 72px} h1{font-size:27px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="mark">세끌</span>
+  <h1>개인정보처리방침</h1>
+  <p class="date">시행일 · 2026년 6월 26일</p>
+
+  <div class="rule"></div>
+  <p>세끌(이하 “앱”)은 이용자의 개인정보를 소중히 여기며 「개인정보 보호법」 등 관련 법령을 준수합니다. 본 방침은 앱이 이용자 정보를 어떻게 다루는지 설명합니다.</p>
+
+  <h2>1. 핵심 원칙 — 수집·전송하지 않습니다</h2>
+  <p>세끌은 <strong>완전한 온디바이스(기기 내) 앱</strong>입니다. 이용자가 입력한 모든 정보(소득·지출·가계부·세무 자료·프로필 등)는 <strong>이용자의 기기 안에만 저장</strong>되며, 앱은 이를 <strong>외부 서버로 전송하지 않고, 수집하지 않으며, 제3자와 공유하지 않습니다.</strong></p>
+  <ul>
+    <li>회원가입·로그인·계정이 없습니다.</li>
+    <li>네트워크로 개인정보를 보내지 않습니다(서버가 없습니다).</li>
+    <li>광고 식별자·위치·연락처·사진을 수집하지 않습니다.</li>
+    <li>분석·추적(애널리틱스) 도구를 사용하지 않습니다.</li>
+  </ul>
+
+  <h2>2. 기기에 저장되는 정보</h2>
+  <p>다음 정보는 이용자의 편의를 위해 <strong>기기 내 로컬 데이터베이스에만</strong> 저장됩니다.</p>
+  <table>
+    <tr><th>항목</th><th>목적</th></tr>
+    <tr><td>프로필(납세 유형·연봉·부양가족 등)</td><td>세액·공제 계산</td></tr>
+    <tr><td>수입·지출·가계부 기록</td><td>가계부·절세 기준 산정</td></tr>
+    <tr><td>원천징수·연말정산 자료</td><td>빠진 공제 진단</td></tr>
+    <tr><td>리마인더(알림) 설정</td><td>기기 내 알림 예약</td></tr>
+  </table>
+  <p>이 정보는 앱을 삭제하거나 앱 내 <strong>‘데이터 파기’</strong> 기능을 사용하면 기기에서 완전히 삭제됩니다. 외부에 사본이 없으므로 복구되지 않습니다.</p>
+
+  <h2>3. 권한 사용</h2>
+  <ul>
+    <li><strong>알림(POST_NOTIFICATIONS)·정확한 알람</strong>: 신고 기한·가계부 기록 등 이용자가 설정한 알림을 기기 자체에서 표시하기 위해 사용합니다. 알림 내용은 외부로 전송되지 않습니다.</li>
+    <li><strong>파일 접근(PDF 불러오기·백업 시)</strong>: 이용자가 직접 선택한 문서를 기기 내에서 읽거나, 백업 파일을 저장·복원하기 위해 사용합니다. 문서나 그 내용은 외부로 전송·저장되지 않습니다.</li>
+  </ul>
+
+  <h2>4. 제3자 제공·위탁</h2>
+  <p>앱은 개인정보를 제3자에게 제공하거나 처리를 위탁하지 않습니다. 외부 SDK를 통한 데이터 전송도 없습니다.</p>
+
+  <h2>5. 아동의 개인정보</h2>
+  <p>앱은 만 14세 미만 아동을 대상으로 하지 않으며, 어떠한 개인정보도 수집하지 않습니다.</p>
+
+  <h2>6. 데이터 백업·이전 책임</h2>
+  <p>모든 데이터가 기기 내에만 존재하므로, 기기 분실·초기화·앱 삭제 시 데이터가 소실될 수 있습니다. 앱은 ‘데이터 백업(내보내기)’ 기능으로 파일 백업을 지원하지만, 백업 파일의 보관 책임은 이용자에게 있습니다.</p>
+
+  <h2>7. 방침 변경</h2>
+  <p>본 방침이 변경될 경우 앱 업데이트 또는 본 페이지를 통해 고지합니다.</p>
+
+  <h2>8. 문의</h2>
+  <p>개인정보 관련 문의: <a href="mailto:ved9an@gmail.com" class="accent">ved9an@gmail.com</a></p>
+
+  <p class="foot">세끌은 이용자의 세무 정보가 기기 밖으로 나가지 않도록 설계되었습니다.</p>
+</div>
+</body>
+</html>

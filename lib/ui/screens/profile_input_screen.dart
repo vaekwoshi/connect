@@ -224,7 +224,7 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
         Text(title, style: AppTheme.serif(28, ink, spacing: -0.5, height: 1.25)),
         if (subtitle != null) ...[
           const SizedBox(height: 12),
-          Text(subtitle, style: AppTheme.sans(13.5, sub, height: 1.55)),
+          Text(subtitle, style: AppTheme.sans(14, sub, height: 1.55)),
         ],
       ],
     );
@@ -328,7 +328,7 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(text,
-            style: AppTheme.sans(16, selected ? AppTheme.backgroundColor(context) : ink,
+            style: AppTheme.sans(15, selected ? AppTheme.backgroundColor(context) : ink,
                 weight: selected ? FontWeight.w700 : FontWeight.w500)),
       ),
     );
@@ -504,7 +504,7 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
           borderRadius: BorderRadius.circular(3),
         ),
         child: Text(text,
-            style: AppTheme.sans(12.5, selected ? AppTheme.backgroundColor(context) : AppTheme.inkSecondary(context),
+            style: AppTheme.sans(12, selected ? AppTheme.backgroundColor(context) : AppTheme.inkSecondary(context),
                 weight: selected ? FontWeight.w700 : FontWeight.w500)),
       ),
     );
@@ -544,7 +544,7 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(type,
-                      style: AppTheme.sans(16, isSelected ? AppTheme.backgroundColor(context) : ink,
+                      style: AppTheme.sans(15, isSelected ? AppTheme.backgroundColor(context) : ink,
                           weight: isSelected ? FontWeight.w700 : FontWeight.w500)),
                 ),
               );
@@ -778,7 +778,7 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
                   children: [
                     Text('항목 ', style: AppTheme.label(context)),
                     Text('${step.toString().padLeft(2, '0')} / ${total.toString().padLeft(2, '0')}',
-                        style: AppTheme.sans(11.5, ink, weight: FontWeight.w700, spacing: 1.0)),
+                        style: AppTheme.sans(12, ink, weight: FontWeight.w700, spacing: 1.0)),
                     const SizedBox(width: 14),
                     Expanded(
                       child: ClipRRect(
@@ -817,7 +817,7 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(isLast ? '프로필 완성' : '다음',
-                            style: AppTheme.sans(15.5, bg, weight: FontWeight.w700)),
+                            style: AppTheme.sans(15, bg, weight: FontWeight.w700)),
                         const SizedBox(width: 8),
                         Icon(isLast ? Icons.check_rounded : Icons.arrow_forward, size: 16, color: bg),
                       ],
@@ -973,7 +973,7 @@ class _DateWheelSheetState extends State<_DateWheelSheet> {
                 height: 54,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(color: ink, borderRadius: BorderRadius.circular(4)),
-                child: Text('적용', style: AppTheme.sans(15.5, bg, weight: FontWeight.w700)),
+                child: Text('적용', style: AppTheme.sans(15, bg, weight: FontWeight.w700)),
               ),
             ),
           ],
@@ -1000,7 +1000,7 @@ class _DateWheelSheetState extends State<_DateWheelSheet> {
       childDelegate: ListWheelChildBuilderDelegate(
         childCount: count,
         builder: (context, i) => Center(
-          child: Text(builder(i), style: AppTheme.serif(26, AppTheme.ink(context), spacing: 0, height: 1.0)),
+          child: Text(builder(i), style: AppTheme.serif(28, AppTheme.ink(context), spacing: 0, height: 1.0)),
         ),
       ),
     );

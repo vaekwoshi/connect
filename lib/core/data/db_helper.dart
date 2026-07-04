@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import '../security/crypto_helper.dart';
 import 'expense_item.dart';
 import 'income_entry.dart';
+import 'recurring_template.dart';
 
 /// 온디바이스 데이터베이스 보안 인터페이스 정의
 abstract class DatabaseService {
@@ -47,9 +48,48 @@ abstract class DatabaseService {
   // 시스템 알림 토글 상태 (v22) — key별 on/off, 값 없으면 ON으로 간주
   Future<Map<String, bool>> getReminderSettings();
   Future<void> setReminderSetting(String key, bool enabled);
+  // 발화 알림 로그 (v23) — 즉시형 알림 기록 (홈 알림함)
+  Future<void> insertNotificationLog({required String title, required String body, String? category});
+  Future<List<Map<String, dynamic>>> getNotificationLogs();
+  Future<void> markAllNotificationsRead();
+  Future<int> unreadNotificationCount();
+  Future<void> clearNotificationLogs();
+  // 고정 지출 템플릿 (v25)
+  Future<int> insertRecurringTemplate(RecurringTemplate t);
+  Future<List<RecurringTemplate>> getRecurringTemplates();
+  Future<void> updateRecurringTemplate(RecurringTemplate t);
+  Future<void> deleteRecurringTemplate(int id);
+  Future<int> getPendingRecurringCount(int year, int month);
+  Future<List<Map<String, dynamic>>> getRecurringConfirmations(int year, int month);
+  Future<void> confirmRecurring(int templateId, int year, int month, {required int amount, required String expenseId});
+  Future<void> skipRecurring(int templateId, int year, int month);
+  // 카드 결제일 목록 (v26)
+  Future<List<Map<String, dynamic>>> getCardPaymentDates();
+  Future<int> addCardPaymentDate(String name, int day);
+  Future<void> deleteCardPaymentDate(int id);
+  // 백업/복원 — 전 테이블을 JSON 직렬화 가능한 맵으로 내보내고/되돌린다(오프라인 파일 백업)
+  Future<Map<String, dynamic>> exportAllData();
+  Future<void> importAllData(Map<String, dynamic> data);
   Future<void> destroyAllData(); // 복구 불가능 영구 파기
   Future<void> close();
 }
+
+/// 백업 대상 테이블(사용자 데이터). 스키마에 없을 수 있어 조회 시 개별 try.
+const List<String> kBackupTables = [
+  'user_profile',
+  'expenses',
+  'income_entries',
+  'monthly_income_records',
+  'monthly_card_usage',
+  'tax_records',
+  'report_drafts',
+  'annual_records',
+  'reminders',
+  'reminder_settings',
+  'banner_states',
+  'recurring_templates',
+  'card_payment_dates',
+];
 
 /// 1. 실제 모바일 기기 구동용 Sqflite 데이터베이스 서비스 구현
 class SqfliteDatabaseHelper implements DatabaseService {
@@ -83,6 +123,53 @@ class SqfliteDatabaseHelper implements DatabaseService {
     )
   ''';
 
+  /// 발화 알림 로그 테이블 (v23). 즉시형 알림 기록용.
+  static const String _notificationLogTableSql = '''
+    CREATE TABLE IF NOT EXISTS notification_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      fired_at TEXT NOT NULL,
+      is_read INTEGER DEFAULT 0,
+      category TEXT
+    )
+  ''';
+
+  /// 고정 지출 템플릿 (v25)
+  static const String _recurringTemplatesTableSql = '''
+    CREATE TABLE IF NOT EXISTS recurring_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      amount_hint INTEGER DEFAULT 0,
+      category TEXT NOT NULL DEFAULT '기타',
+      payment_method TEXT NOT NULL DEFAULT '기타',
+      day_of_month INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER DEFAULT 0
+    )
+  ''';
+
+  /// 고정 지출 월별 확인 기록 (v25)
+  static const String _recurringConfirmationsTableSql = '''
+    CREATE TABLE IF NOT EXISTS recurring_confirmations (
+      template_id INTEGER NOT NULL,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      status INTEGER DEFAULT 0,
+      actual_amount INTEGER DEFAULT 0,
+      expense_id TEXT,
+      PRIMARY KEY (template_id, year, month)
+    )
+  ''';
+
+  /// 카드 결제일 목록 (v26)
+  static const String _cardPaymentDatesTableSql = '''
+    CREATE TABLE IF NOT EXISTS card_payment_dates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      day INTEGER NOT NULL
+    )
+  ''';
+
   @override
   Future<void> initDatabase() async {
     if (_db != null) return;
@@ -92,7 +179,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
 
     _db = await openDatabase(
       path,
-      version: 22,
+      version: 26,
       onCreate: (db, version) async {
         // 프로필 테이블 생성
         await db.execute('''
@@ -135,7 +222,8 @@ class SqfliteDatabaseHelper implements DatabaseService {
             end_date TEXT,
             amount TEXT,
             content TEXT,
-            category TEXT
+            category TEXT,
+            payment_method TEXT
           )
         ''');
         // 세무 기록부 테이블 생성
@@ -209,6 +297,13 @@ class SqfliteDatabaseHelper implements DatabaseService {
         await db.execute(_remindersTableSql);
         // 시스템 알림 토글 (v22)
         await db.execute(_reminderSettingsTableSql);
+        // 발화 알림 로그 (v23)
+        await db.execute(_notificationLogTableSql);
+        // 고정 지출 템플릿 (v25)
+        await db.execute(_recurringTemplatesTableSql);
+        await db.execute(_recurringConfirmationsTableSql);
+        // 카드 결제일 (v26)
+        await db.execute(_cardPaymentDatesTableSql);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -386,6 +481,41 @@ class SqfliteDatabaseHelper implements DatabaseService {
             await db.execute(_reminderSettingsTableSql);
           } catch (e) {}
         }
+        if (oldVersion < 23) {
+          try {
+            await db.execute(_notificationLogTableSql);
+          } catch (e) {}
+        }
+        if (oldVersion < 24) {
+          try {
+            await db.execute('ALTER TABLE expenses ADD COLUMN payment_method TEXT');
+            // 기존 category(결제수단) → payment_method로 이관, category는 '기타'(미분류)로 초기화
+            final rows = await db.query('expenses');
+            for (final row in rows) {
+              try {
+                final oldCat = row['category'] as String?;
+                if (oldCat != null) {
+                  final encNewCat = CryptoHelper.encrypt('기타');
+                  await db.update('expenses', {
+                    'payment_method': oldCat,
+                    'category': encNewCat,
+                  }, where: 'id = ?', whereArgs: [row['id']]);
+                }
+              } catch (_) {}
+            }
+          } catch (e) {}
+        }
+        if (oldVersion < 25) {
+          try {
+            await db.execute(_recurringTemplatesTableSql);
+            await db.execute(_recurringConfirmationsTableSql);
+          } catch (e) {}
+        }
+        if (oldVersion < 26) {
+          try {
+            await db.execute(_cardPaymentDatesTableSql);
+          } catch (e) {}
+        }
       },
     );
   }
@@ -492,10 +622,10 @@ class SqfliteDatabaseHelper implements DatabaseService {
     final db = _db;
     if (db == null) return;
 
-    // 민감 정보 암호화 처리 후 텍스트로 삽입
     final String encryptedAmount = CryptoHelper.encrypt(item.amount.toString());
     final String encryptedContent = CryptoHelper.encrypt(item.content);
     final String encryptedCategory = CryptoHelper.encrypt(item.category);
+    final String encryptedPayment = CryptoHelper.encrypt(item.paymentMethod);
 
     await db.insert(
       'expenses',
@@ -506,6 +636,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'amount': encryptedAmount,
         'content': encryptedContent,
         'category': encryptedCategory,
+        'payment_method': encryptedPayment,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -521,10 +652,15 @@ class SqfliteDatabaseHelper implements DatabaseService {
 
     for (final map in maps) {
       try {
-        // 복호화 수행 및 원 데이터 복구
         final String decryptedAmountStr = CryptoHelper.decrypt(map['amount'] as String);
         final String decryptedContent = CryptoHelper.decrypt(map['content'] as String);
         final String decryptedCategory = CryptoHelper.decrypt(map['category'] as String);
+
+        final pmRaw = map['payment_method'] as String?;
+        String paymentMethod = '기타';
+        if (pmRaw != null) {
+          try { paymentMethod = CryptoHelper.decrypt(pmRaw); } catch (_) {}
+        }
 
         final int amount = int.parse(decryptedAmountStr);
         final DateTime date = DateTime.parse(map['date'] as String);
@@ -537,6 +673,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
           amount: amount,
           content: decryptedContent,
           category: decryptedCategory,
+          paymentMethod: paymentMethod,
         ));
       } catch (e) {
         // 복호화 실패 등 예외 시 무시
@@ -559,6 +696,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
     final String encryptedAmount = CryptoHelper.encrypt(item.amount.toString());
     final String encryptedContent = CryptoHelper.encrypt(item.content);
     final String encryptedCategory = CryptoHelper.encrypt(item.category);
+    final String encryptedPayment = CryptoHelper.encrypt(item.paymentMethod);
     await db.update(
       'expenses',
       {
@@ -567,6 +705,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'amount': encryptedAmount,
         'content': encryptedContent,
         'category': encryptedCategory,
+        'payment_method': encryptedPayment,
       },
       where: 'id = ?',
       whereArgs: [item.id],
@@ -836,6 +975,93 @@ class SqfliteDatabaseHelper implements DatabaseService {
     );
   }
 
+  @override
+  Future<void> insertNotificationLog({required String title, required String body, String? category}) async {
+    final db = _db;
+    if (db == null) return;
+    await db.insert('notification_log', {
+      'title': title,
+      'body': body,
+      'fired_at': DateTime.now().toIso8601String(),
+      'is_read': 0,
+      'category': category,
+    });
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getNotificationLogs() async {
+    final db = _db;
+    if (db == null) return [];
+    return await db.query('notification_log', orderBy: 'fired_at DESC', limit: 100);
+  }
+
+  @override
+  Future<void> markAllNotificationsRead() async {
+    final db = _db;
+    if (db == null) return;
+    await db.update('notification_log', {'is_read': 1});
+  }
+
+  @override
+  Future<int> unreadNotificationCount() async {
+    final db = _db;
+    if (db == null) return 0;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as c FROM notification_log WHERE is_read = 0',
+    );
+    return (result.first['c'] as int?) ?? 0;
+  }
+
+  @override
+  Future<void> clearNotificationLogs() async {
+    final db = _db;
+    if (db == null) return;
+    await db.delete('notification_log');
+  }
+
+  @override
+  Future<Map<String, dynamic>> exportAllData() async {
+    final db = _db;
+    if (db == null) return {};
+    final tables = <String, dynamic>{};
+    for (final t in kBackupTables) {
+      try {
+        tables[t] = await db.query(t);
+      } catch (_) {
+        // 해당 버전에 없는 테이블은 건너뜀
+      }
+    }
+    return {
+      'app': 'sekkeul',
+      'schema': 22,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'tables': tables,
+    };
+  }
+
+  @override
+  Future<void> importAllData(Map<String, dynamic> data) async {
+    final db = _db;
+    if (db == null) return;
+    final tables = (data['tables'] as Map?) ?? {};
+    await db.transaction((txn) async {
+      for (final entry in tables.entries) {
+        final t = entry.key.toString();
+        if (!kBackupTables.contains(t)) continue;
+        final rows = (entry.value as List?) ?? [];
+        try {
+          await txn.delete(t);
+          for (final r in rows) {
+            await txn.insert(t, Map<String, dynamic>.from(r as Map),
+                conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        } catch (_) {
+          // 테이블 누락/스키마 차이는 건너뜀(부분 복원 허용)
+        }
+      }
+    });
+  }
+
   Map<String, dynamic> _reminderToRow(Map<String, dynamic> r) => {
         if (r['id'] != null) 'id': r['id'],
         'title': r['title'],
@@ -867,6 +1093,150 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'notif_id': row['notif_id'],
       };
 
+  RecurringTemplate _rowToTemplate(Map<String, dynamic> row) => RecurringTemplate(
+    id: row['id'] as int,
+    name: row['name'] as String,
+    amountHint: row['amount_hint'] as int? ?? 0,
+    category: row['category'] as String? ?? '기타',
+    paymentMethod: row['payment_method'] as String? ?? '기타',
+    dayOfMonth: row['day_of_month'] as int? ?? 1,
+    sortOrder: row['sort_order'] as int? ?? 0,
+  );
+
+  @override
+  Future<int> insertRecurringTemplate(RecurringTemplate t) async {
+    final db = _db;
+    if (db == null) return -1;
+    return await db.insert('recurring_templates', {
+      'name': t.name,
+      'amount_hint': t.amountHint,
+      'category': t.category,
+      'payment_method': t.paymentMethod,
+      'day_of_month': t.dayOfMonth,
+      'sort_order': t.sortOrder,
+    });
+  }
+
+  @override
+  Future<List<RecurringTemplate>> getRecurringTemplates() async {
+    final db = _db;
+    if (db == null) return [];
+    final rows = await db.query('recurring_templates', orderBy: 'sort_order ASC, id ASC');
+    return rows.map(_rowToTemplate).toList();
+  }
+
+  @override
+  Future<void> updateRecurringTemplate(RecurringTemplate t) async {
+    final db = _db;
+    if (db == null) return;
+    await db.update('recurring_templates', {
+      'name': t.name,
+      'amount_hint': t.amountHint,
+      'category': t.category,
+      'payment_method': t.paymentMethod,
+      'day_of_month': t.dayOfMonth,
+      'sort_order': t.sortOrder,
+    }, where: 'id = ?', whereArgs: [t.id]);
+  }
+
+  @override
+  Future<void> deleteRecurringTemplate(int id) async {
+    final db = _db;
+    if (db == null) return;
+    await db.delete('recurring_templates', where: 'id = ?', whereArgs: [id]);
+    await db.delete('recurring_confirmations', where: 'template_id = ?', whereArgs: [id]);
+  }
+
+  @override
+  Future<int> getPendingRecurringCount(int year, int month) async {
+    final db = _db;
+    if (db == null) return 0;
+    final templates = await db.query('recurring_templates');
+    if (templates.isEmpty) return 0;
+    int pending = 0;
+    for (final t in templates) {
+      final id = t['id'] as int;
+      final conf = await db.query(
+        'recurring_confirmations',
+        where: 'template_id = ? AND year = ? AND month = ?',
+        whereArgs: [id, year, month],
+      );
+      if (conf.isEmpty || (conf.first['status'] as int) == 0) pending++;
+    }
+    return pending;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getRecurringConfirmations(int year, int month) async {
+    final db = _db;
+    if (db == null) return [];
+    final templates = await db.query('recurring_templates', orderBy: 'sort_order ASC, id ASC');
+    final result = <Map<String, dynamic>>[];
+    for (final t in templates) {
+      final id = t['id'] as int;
+      final conf = await db.query(
+        'recurring_confirmations',
+        where: 'template_id = ? AND year = ? AND month = ?',
+        whereArgs: [id, year, month],
+      );
+      result.add({
+        'template': _rowToTemplate(t),
+        'status': conf.isEmpty ? 0 : (conf.first['status'] as int? ?? 0),
+        'actual_amount': conf.isEmpty ? 0 : (conf.first['actual_amount'] as int? ?? 0),
+        'expense_id': conf.isEmpty ? null : conf.first['expense_id'],
+      });
+    }
+    return result;
+  }
+
+  @override
+  Future<void> confirmRecurring(int templateId, int year, int month, {required int amount, required String expenseId}) async {
+    final db = _db;
+    if (db == null) return;
+    await db.insert('recurring_confirmations', {
+      'template_id': templateId,
+      'year': year,
+      'month': month,
+      'status': 1,
+      'actual_amount': amount,
+      'expense_id': expenseId,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<void> skipRecurring(int templateId, int year, int month) async {
+    final db = _db;
+    if (db == null) return;
+    await db.insert('recurring_confirmations', {
+      'template_id': templateId,
+      'year': year,
+      'month': month,
+      'status': 2,
+      'actual_amount': 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getCardPaymentDates() async {
+    final db = _db;
+    if (db == null) return [];
+    return await db.query('card_payment_dates', orderBy: 'day ASC');
+  }
+
+  @override
+  Future<int> addCardPaymentDate(String name, int day) async {
+    final db = _db;
+    if (db == null) return -1;
+    return await db.insert('card_payment_dates', {'name': name, 'day': day});
+  }
+
+  @override
+  Future<void> deleteCardPaymentDate(int id) async {
+    final db = _db;
+    if (db == null) return;
+    await db.delete('card_payment_dates', where: 'id = ?', whereArgs: [id]);
+  }
+
   @override
   Future<void> destroyAllData() async {
     final db = _db;
@@ -884,6 +1254,10 @@ class SqfliteDatabaseHelper implements DatabaseService {
       await db.execute("DELETE FROM annual_records");
       await db.execute("DELETE FROM reminders");
       await db.execute("DELETE FROM reminder_settings");
+      await db.execute("DELETE FROM notification_log");
+      await db.execute("DELETE FROM recurring_templates");
+      await db.execute("DELETE FROM recurring_confirmations");
+      await db.execute("DELETE FROM card_payment_dates");
     } catch (e) {
       // 무시
     }
@@ -956,11 +1330,11 @@ class InMemoryDatabaseHelper implements DatabaseService {
   @override
   Future<void> insertExpense(ExpenseItem item) async {
     if (_isClosed) return;
-    
-    // 유닛 테스트 무결성 증명을 위해 인메모리 내에서도 암호화 적재 시뮬레이션 수행
+
     final String encryptedAmount = CryptoHelper.encrypt(item.amount.toString());
     final String encryptedContent = CryptoHelper.encrypt(item.content);
     final String encryptedCategory = CryptoHelper.encrypt(item.category);
+    final String encryptedPayment = CryptoHelper.encrypt(item.paymentMethod);
 
     _expenses[item.id] = {
       'id': item.id,
@@ -969,19 +1343,25 @@ class InMemoryDatabaseHelper implements DatabaseService {
       'amount': encryptedAmount,
       'content': encryptedContent,
       'category': encryptedCategory,
+      'payment_method': encryptedPayment,
     };
   }
 
   @override
   Future<List<ExpenseItem>> getExpenses() async {
     if (_isClosed) return [];
-    
+
     final List<ExpenseItem> list = [];
     for (final raw in _expenses.values) {
       final String decryptedAmountStr = CryptoHelper.decrypt(raw['amount'] as String);
       final String decryptedContent = CryptoHelper.decrypt(raw['content'] as String);
       final String decryptedCategory = CryptoHelper.decrypt(raw['category'] as String);
-      
+      final pmRaw = raw['payment_method'] as String?;
+      String paymentMethod = '기타';
+      if (pmRaw != null) {
+        try { paymentMethod = CryptoHelper.decrypt(pmRaw); } catch (_) {}
+      }
+
       final endDateStr = raw['end_date'] as String?;
       list.add(ExpenseItem(
         id: raw['id'] as String,
@@ -990,6 +1370,7 @@ class InMemoryDatabaseHelper implements DatabaseService {
         amount: int.parse(decryptedAmountStr),
         content: decryptedContent,
         category: decryptedCategory,
+        paymentMethod: paymentMethod,
       ));
     }
     return list;
@@ -1190,6 +1571,145 @@ class InMemoryDatabaseHelper implements DatabaseService {
     _reminderSettings[key] = enabled;
   }
 
+  final List<Map<String, dynamic>> _notificationLogs = [];
+
+  @override
+  Future<void> insertNotificationLog({required String title, required String body, String? category}) async {
+    if (_isClosed) return;
+    _notificationLogs.insert(0, {
+      'id': _notificationLogs.length + 1,
+      'title': title,
+      'body': body,
+      'fired_at': DateTime.now().toIso8601String(),
+      'is_read': 0,
+      'category': category,
+    });
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getNotificationLogs() async {
+    if (_isClosed) return [];
+    return List<Map<String, dynamic>>.from(_notificationLogs);
+  }
+
+  @override
+  Future<void> markAllNotificationsRead() async {
+    if (_isClosed) return;
+    for (var i = 0; i < _notificationLogs.length; i++) {
+      _notificationLogs[i] = {..._notificationLogs[i], 'is_read': 1};
+    }
+  }
+
+  @override
+  Future<int> unreadNotificationCount() async {
+    if (_isClosed) return 0;
+    return _notificationLogs.where((e) => e['is_read'] == 0).length;
+  }
+
+  @override
+  Future<void> clearNotificationLogs() async {
+    if (_isClosed) return;
+    _notificationLogs.clear();
+  }
+
+  // 고정 지출 템플릿 (v25) — 웹 인메모리 구현
+  final List<RecurringTemplate> _recurringTemplates = [];
+  int _recurringTemplateAutoId = 1;
+  final Map<String, int> _recurringConfirmations = {}; // '${templateId}_${year}_${month}' → status
+
+  @override
+  Future<int> insertRecurringTemplate(RecurringTemplate t) async {
+    if (_isClosed) return -1;
+    final id = _recurringTemplateAutoId++;
+    _recurringTemplates.add(t.copyWith(id: id));
+    return id;
+  }
+
+  @override
+  Future<List<RecurringTemplate>> getRecurringTemplates() async {
+    if (_isClosed) return [];
+    return List<RecurringTemplate>.from(_recurringTemplates);
+  }
+
+  @override
+  Future<void> updateRecurringTemplate(RecurringTemplate t) async {
+    if (_isClosed) return;
+    final idx = _recurringTemplates.indexWhere((e) => e.id == t.id);
+    if (idx >= 0) _recurringTemplates[idx] = t;
+  }
+
+  @override
+  Future<void> deleteRecurringTemplate(int id) async {
+    if (_isClosed) return;
+    _recurringTemplates.removeWhere((e) => e.id == id);
+    _recurringConfirmations.removeWhere((k, _) => k.startsWith('${id}_'));
+  }
+
+  @override
+  Future<int> getPendingRecurringCount(int year, int month) async {
+    if (_isClosed) return 0;
+    int pending = 0;
+    for (final t in _recurringTemplates) {
+      final status = _recurringConfirmations['${t.id}_${year}_$month'] ?? 0;
+      if (status == 0) pending++;
+    }
+    return pending;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getRecurringConfirmations(int year, int month) async {
+    if (_isClosed) return [];
+    return _recurringTemplates.map((t) {
+      final status = _recurringConfirmations['${t.id}_${year}_$month'] ?? 0;
+      return {
+        'template': t,
+        'status': status,
+        'actual_amount': 0,
+        'expense_id': null,
+      };
+    }).toList();
+  }
+
+  @override
+  Future<void> confirmRecurring(int templateId, int year, int month, {required int amount, required String expenseId}) async {
+    if (_isClosed) return;
+    _recurringConfirmations['${templateId}_${year}_$month'] = 1;
+  }
+
+  @override
+  Future<void> skipRecurring(int templateId, int year, int month) async {
+    if (_isClosed) return;
+    _recurringConfirmations['${templateId}_${year}_$month'] = 2;
+  }
+
+  // 카드 결제일 (v26) — 인메모리 스텁
+  final List<Map<String, dynamic>> _cardPaymentDates = [];
+  int _cardDateAutoId = 1;
+
+  @override
+  Future<List<Map<String, dynamic>>> getCardPaymentDates() async =>
+      List<Map<String, dynamic>>.from(_cardPaymentDates);
+
+  @override
+  Future<int> addCardPaymentDate(String name, int day) async {
+    final id = _cardDateAutoId++;
+    _cardPaymentDates.add({'id': id, 'name': name, 'day': day});
+    return id;
+  }
+
+  @override
+  Future<void> deleteCardPaymentDate(int id) async {
+    _cardPaymentDates.removeWhere((e) => e['id'] == id);
+  }
+
+  // 웹(인메모리)은 휘발성이라 파일 백업 의미가 약함 — 인터페이스 충족용 최소 구현.
+  @override
+  Future<Map<String, dynamic>> exportAllData() async =>
+      {'app': 'sekkeul', 'schema': 25, 'exportedAt': DateTime.now().toIso8601String(), 'tables': {}};
+
+  @override
+  Future<void> importAllData(Map<String, dynamic> data) async {}
+
   @override
   Future<void> destroyAllData() async {
     // 1단계: 난수 오염 시뮬레이션
@@ -1212,6 +1732,8 @@ class InMemoryDatabaseHelper implements DatabaseService {
     _annualRecords.clear();
     _reminders.clear();
     _reminderSettings.clear();
+    _recurringTemplates.clear();
+    _recurringConfirmations.clear();
     await close();
   }
 

@@ -44,6 +44,14 @@ class _FinancialIncomeScreenState extends State<FinancialIncomeScreen> {
     }
   }
 
+  void _reset() {
+    setState(() {
+      _interestController.clear();
+      _dividendController.clear();
+      _otherIncomeController.clear();
+    });
+  }
+
   @override
   void dispose() {
     _interestController.dispose();
@@ -92,6 +100,13 @@ class _FinancialIncomeScreenState extends State<FinancialIncomeScreen> {
         title: Text('금융소득 종합과세 계산',
             style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold)),
         iconTheme: IconThemeData(color: textColor),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh_rounded, size: 20, color: subColor),
+            tooltip: '초기화',
+            onPressed: _reset,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),

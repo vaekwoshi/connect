@@ -106,6 +106,7 @@ class _FreelancerImportScreenState extends State<FreelancerImportScreen> {
         _busy = false;
       });
     } catch (e) {
+      debugPrint('프리랜서 PDF 파싱 실패: $e');
       setState(() {
         _busy = false;
         _error = 'PDF를 분석하지 못했어요. 사업소득 원천징수영수증 PDF가 맞는지 확인해 주세요.';
@@ -167,7 +168,7 @@ class _FreelancerImportScreenState extends State<FreelancerImportScreen> {
             Text(_manualMode
                 ? '연간 총수입과 업종을 고르면 경비율로 소득금액·세금을 계산해요. 모두 기기 안에서만 분석돼요.'
                 : '사업소득 원천징수영수증·지급명세서 PDF로 5월 종합소득세 신고서를 만들어요. 기기 안에서만 분석돼요.',
-                style: AppTheme.sans(13.5, sub, height: 1.55)),
+                style: AppTheme.sans(14, sub, height: 1.55)),
             const SizedBox(height: 20),
 
             _modeToggle(),
@@ -267,7 +268,7 @@ class _FreelancerImportScreenState extends State<FreelancerImportScreen> {
             style: AppTheme.sans(13, sub, height: 1.45)),
         const SizedBox(height: 16),
         // 업종 선택
-        Text('업종코드 (경비율 기준)', style: AppTheme.sans(13.5, sub, weight: FontWeight.w600)),
+        Text('업종코드 (경비율 기준)', style: AppTheme.sans(14, sub, weight: FontWeight.w600)),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: () async {
@@ -320,14 +321,14 @@ class _FreelancerImportScreenState extends State<FreelancerImportScreen> {
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('사업소득 원천징수영수증', style: AppTheme.sans(15.5, ink, weight: FontWeight.w700, spacing: -0.2)),
+              Text('사업소득 원천징수영수증', style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
               const SizedBox(height: 3),
               Text(done ? '총수입 ${_won(r.grossIncome)} · ${r.isRefund ? '환급' : '추가납부'} ${_won(r.settlementAbs)}' : '총수입·원천징수(3.3%) 자료',
-                  style: AppTheme.sans(12.5, done ? accent : sub, height: 1.4)),
+                  style: AppTheme.sans(12, done ? accent : sub, height: 1.4)),
             ]),
           ),
           const SizedBox(width: 8),
-          Text(done ? '다시' : 'PDF 선택', style: AppTheme.sans(12.5, tert, weight: FontWeight.w600)),
+          Text(done ? '다시' : 'PDF 선택', style: AppTheme.sans(12, tert, weight: FontWeight.w600)),
         ]),
       ),
     );
@@ -355,7 +356,7 @@ class _FreelancerImportScreenState extends State<FreelancerImportScreen> {
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppTheme.line(context)))),
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(children: [
-        Expanded(child: Text(label, style: AppTheme.sans(13.5, AppTheme.ink(context)))),
+        Expanded(child: Text(label, style: AppTheme.sans(14, AppTheme.ink(context)))),
         _numField(key, allowNeg: allowNeg),
         const SizedBox(width: 8),
         Text('원', style: AppTheme.sans(15, AppTheme.inkSecondary(context), weight: FontWeight.w600)),
@@ -372,12 +373,12 @@ class _FreelancerImportScreenState extends State<FreelancerImportScreen> {
         controller: _ctrl(key),
         keyboardType: const TextInputType.numberWithOptions(signed: true),
         textAlign: TextAlign.right,
-        style: AppTheme.sans(13.5, ink, weight: FontWeight.w600),
+        style: AppTheme.sans(14, ink, weight: FontWeight.w600),
         decoration: InputDecoration(
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           hintText: '0',
-          hintStyle: AppTheme.sans(13.5, AppTheme.inkTertiary(context)),
+          hintStyle: AppTheme.sans(14, AppTheme.inkTertiary(context)),
           filled: true,
           fillColor: AppTheme.surface(context),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: AppTheme.line(context))),
@@ -420,7 +421,7 @@ class _FreelancerImportScreenState extends State<FreelancerImportScreen> {
         ]),
         const SizedBox(height: 6),
         Text('기납부 3.3%(${_won(r.withheldTax)}) − 결정세액(${_won(r.decidedTax)}) 기준이에요.',
-            style: AppTheme.sans(12.5, sub, height: 1.45)),
+            style: AppTheme.sans(12, sub, height: 1.45)),
       ]),
     );
   }
@@ -435,7 +436,7 @@ class _FreelancerImportScreenState extends State<FreelancerImportScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(color: AppTheme.ink(context), borderRadius: BorderRadius.circular(4)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text('종합소득세 신고서로 저장', style: AppTheme.sans(15.5, bg, weight: FontWeight.w700)),
+          Text('종합소득세 신고서로 저장', style: AppTheme.sans(15, bg, weight: FontWeight.w700)),
           const SizedBox(width: 8),
           Icon(Icons.arrow_forward, size: 16, color: bg),
         ]),

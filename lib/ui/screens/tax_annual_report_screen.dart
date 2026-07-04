@@ -106,7 +106,7 @@ class _TaxAnnualReportScreenState extends State<TaxAnnualReportScreen> {
       double debit = 0.0;
       for (final e in expenses) {
         if (e.date.year == _year) {
-          if (e.category == '신용카드') {
+          if (e.paymentMethod == '신용카드') {
             credit += e.amount;
           } else {
             debit += e.amount;

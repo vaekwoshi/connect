@@ -66,6 +66,21 @@ class _DependentDeductionScreenState extends State<DependentDeductionScreen> {
     }
   }
 
+  void _reset() {
+    setState(() {
+      _dependents = 0;
+      _isSpouseDependent = false;
+      _hasSelfDisability = false;
+      _hasSpouseDisability = false;
+      _disabledDependentCount = 0;
+      _hasElderly70Plus = false;
+      _isFemaleHead = false;
+      _isSingleParent = false;
+      _childrenCount = 0;
+      _newbornCount = 0;
+    });
+  }
+
   Future<void> _save() async {
     final profile = await dbService.getProfile() ?? {};
     profile['dependents'] = _dependents;
@@ -127,6 +142,13 @@ class _DependentDeductionScreenState extends State<DependentDeductionScreen> {
         title: Text('부양가족 공제 확인',
             style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold)),
         iconTheme: IconThemeData(color: textColor),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh_rounded, size: 20, color: subColor),
+            tooltip: '초기화',
+            onPressed: _reset,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -325,10 +347,10 @@ class _DependentDeductionScreenState extends State<DependentDeductionScreen> {
         width: 32,
         height: 32,
         decoration: BoxDecoration(
-          color: (disabled ? primary.withOpacity(0.08) : primary.withOpacity(0.15)),
+          color: (disabled ? primary.withValues(alpha: 0.08) : primary.withValues(alpha: 0.15)),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, size: 18, color: disabled ? primary.withOpacity(0.3) : primary),
+        child: Icon(icon, size: 18, color: disabled ? primary.withValues(alpha: 0.3) : primary),
       ),
     );
   }

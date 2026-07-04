@@ -141,6 +141,7 @@ class _TaxRecordImportScreenState extends State<TaxRecordImportScreen> {
         _busy = false;
       });
     } catch (e) {
+      debugPrint('연말정산 PDF 파싱 실패: $e');
       setState(() {
         _busy = false;
         _error = 'PDF를 분석하지 못했어요. 홈택스에서 받은 PDF가 맞는지 확인해 주세요.';
@@ -226,7 +227,7 @@ class _TaxRecordImportScreenState extends State<TaxRecordImportScreen> {
             Text(_manualMode
                 ? '회사에 안 낸 공제를 직접 적으면 빠진 공제를 찾아 5월 종합소득세 신고에 써드려요. 모두 기기 안에서만 분석돼요.'
                 : '홈택스에서 받은 간소화 자료·원천징수영수증 PDF를 올리면 값을 자동으로 채워요. 모두 기기 안에서만 분석돼요.',
-                style: AppTheme.sans(13.5, sub, height: 1.55)),
+                style: AppTheme.sans(14, sub, height: 1.55)),
             const SizedBox(height: 20),
 
             _modeToggle(),
@@ -323,15 +324,15 @@ class _TaxRecordImportScreenState extends State<TaxRecordImportScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: AppTheme.sans(15.5, ink, weight: FontWeight.w700, spacing: -0.2)),
+                  Text(label, style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
                   const SizedBox(height: 3),
                   Text(summary ?? hint,
-                      style: AppTheme.sans(12.5, done ? accent : sub, height: 1.4)),
+                      style: AppTheme.sans(12, done ? accent : sub, height: 1.4)),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            Text(done ? '다시' : 'PDF 선택', style: AppTheme.sans(12.5, tert, weight: FontWeight.w600)),
+            Text(done ? '다시' : 'PDF 선택', style: AppTheme.sans(12, tert, weight: FontWeight.w600)),
           ],
         ),
       ),
@@ -399,7 +400,7 @@ class _TaxRecordImportScreenState extends State<TaxRecordImportScreen> {
         _manualRow('총급여', 'salary'),
         _manualRow('결정세액', 'decided'),
         const SizedBox(height: 14),
-        Text('공제 항목 (회사에 안 낸 금액)', style: AppTheme.sans(12.5, sub, weight: FontWeight.w600)),
+        Text('공제 항목 (회사에 안 낸 금액)', style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
         const SizedBox(height: 6),
         AppTheme.hairline(context),
         _manualRow('신용카드', 'av_card'),
@@ -433,7 +434,7 @@ class _TaxRecordImportScreenState extends State<TaxRecordImportScreen> {
         Icon(Icons.verified_outlined, size: 20, color: AppTheme.colorSuccess),
         const SizedBox(width: 12),
         Expanded(child: Text('빠뜨린 공제가 없어요. 이미 잘 챙기셨네요.',
-            style: AppTheme.sans(13.5, AppTheme.ink(context), weight: FontWeight.w600, height: 1.4))),
+            style: AppTheme.sans(14, AppTheme.ink(context), weight: FontWeight.w600, height: 1.4))),
       ]),
     );
   }
@@ -477,7 +478,7 @@ class _TaxRecordImportScreenState extends State<TaxRecordImportScreen> {
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppTheme.line(context)))),
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(children: [
-        Expanded(flex: 3, child: Text(label, style: AppTheme.sans(13.5, AppTheme.ink(context)))),
+        Expanded(flex: 3, child: Text(label, style: AppTheme.sans(14, AppTheme.ink(context)))),
         Expanded(flex: 4, child: _amount(avKey, expand: true)),
         const SizedBox(width: 10),
         Expanded(flex: 4, child: _amount(clKey, expand: true)),
@@ -513,7 +514,7 @@ class _TaxRecordImportScreenState extends State<TaxRecordImportScreen> {
             Text('원', style: AppTheme.sans(15, sub, weight: FontWeight.w600)),
           ]),
           const SizedBox(height: 6),
-          Text('연말정산에 안 넣은 공제예요. 경정청구로 돌려받을 수 있어요.', style: AppTheme.sans(12.5, sub, height: 1.45)),
+          Text('연말정산에 안 넣은 공제예요. 경정청구로 돌려받을 수 있어요.', style: AppTheme.sans(12, sub, height: 1.45)),
         ],
       ),
     );
@@ -562,7 +563,7 @@ class _TaxRecordImportScreenState extends State<TaxRecordImportScreen> {
         decoration: BoxDecoration(color: AppTheme.ink(context), borderRadius: BorderRadius.circular(4)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text(hasMissed ? '경정청구 신고서로 저장' : '연말정산 결과 저장',
-              style: AppTheme.sans(15.5, bg, weight: FontWeight.w700)),
+              style: AppTheme.sans(15, bg, weight: FontWeight.w700)),
           const SizedBox(width: 8),
           Icon(Icons.arrow_forward, size: 16, color: bg),
         ]),

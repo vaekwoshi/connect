@@ -75,9 +75,9 @@ class InsuranceEngine {
   // 특고 고용보험 본인부담
   static const double specialWorkerEmploymentRate = 0.008; // 0.8%
 
-  // 2026년 상하한액 (월 소득 기준)
-  static const double pensionLowerBound = 400000;
-  static const double pensionUpperBound = 6370000;
+  // 국민연금 기준소득월액 상·하한 — TaxRates 단일 출처 참조(드리프트 방지).
+  static const double pensionLowerBound = TaxRates.nationalPensionBaseLowerLimit;
+  static const double pensionUpperBound = TaxRates.nationalPensionBaseUpperLimit;
   
   static const double healthLowerBound = 280667;
   static const double healthUpperBound = 127725731;

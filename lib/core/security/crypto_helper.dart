@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 /// 온디바이스 보안 저장부의 민감 데이터 보호를 위한 경량 암호화 헬퍼 클래스
 class CryptoHelper {
@@ -52,7 +53,8 @@ class CryptoHelper {
 
       return utf8.decode(plainBytes);
     } catch (e) {
-      // 복호화 실패 시 방어 코드
+      // 복호화 실패 — 빈 값으로 떨어지되, 조용히 데이터가 사라진 것처럼 보이지 않게 로깅.
+      debugPrint('CryptoHelper.decrypt 실패: $e');
       return "";
     }
   }

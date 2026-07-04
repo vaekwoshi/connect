@@ -59,7 +59,7 @@ class TaxReportFormScreen extends StatelessWidget {
             // ── 표제 ──
             Text('가상 신고서 · ${reportType.toUpperCase()}', style: AppTheme.label(context)),
             const SizedBox(height: 12),
-            Text(_officialName, style: AppTheme.serif(26, ink, spacing: -0.5, height: 1.2)),
+            Text(_officialName, style: AppTheme.serif(28, ink, spacing: -0.5, height: 1.2)),
             const SizedBox(height: 22),
 
             // ── 열 캡션 ──
@@ -86,7 +86,7 @@ class TaxReportFormScreen extends StatelessWidget {
               const SizedBox(height: 18),
               Text(
                 '※ 세끌 계산 결과로 만든 가상 양식이에요. 실제 신고 시 금액이 달라질 수 있어요.',
-                style: AppTheme.sans(11.5, tert, height: 1.5),
+                style: AppTheme.sans(12, tert, height: 1.5),
               ),
               // 종합소득세 신고서 작성 후 → 지난 연도 경정청구로 안내 (보조 도구)
               if (reportType == '종합소득세') ...[
@@ -133,7 +133,7 @@ class TaxReportFormScreen extends StatelessWidget {
                       style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
                   const SizedBox(height: 5),
                   Text('최근 5년 안에 낸 신고에서 놓친 공제는 경정청구로 더 돌려받을 수 있어요.',
-                      style: AppTheme.sans(12.5, sub, height: 1.45)),
+                      style: AppTheme.sans(12, sub, height: 1.45)),
                 ],
               ),
             ),
@@ -172,7 +172,7 @@ class TaxReportFormScreen extends StatelessWidget {
               width: 38,
               decoration: BoxDecoration(border: Border(right: BorderSide(color: line, width: 1))),
               alignment: Alignment.center,
-              child: Text(op, style: AppTheme.serif(16, ghost, spacing: 0, height: 1.0)),
+              child: Text(op, style: AppTheme.serif(17, ghost, spacing: 0, height: 1.0)),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -189,7 +189,7 @@ class TaxReportFormScreen extends StatelessWidget {
             const SizedBox(width: 12),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text('—', style: AppTheme.serif(18, ghost, spacing: 0, height: 1.0)),
+              child: Text('—', style: AppTheme.serif(17, ghost, spacing: 0, height: 1.0)),
             ),
           ],
         ),
@@ -213,10 +213,10 @@ class TaxReportFormScreen extends StatelessWidget {
           Text('아직 계산 전이에요', style: AppTheme.label(context)),
           const SizedBox(height: 10),
           Text('진단을 마치면 이 신고서가\n자동으로 채워져요.',
-              style: AppTheme.sans(14.5, ink, weight: FontWeight.w600, height: 1.4)),
+              style: AppTheme.sans(14, ink, weight: FontWeight.w600, height: 1.4)),
           const SizedBox(height: 6),
           Text('②단계에서 소득·공제를 넣으면 위 항목이 숫자로 채워집니다.',
-              style: AppTheme.sans(12.5, sub, height: 1.45)),
+              style: AppTheme.sans(12, sub, height: 1.45)),
           const SizedBox(height: 16),
           GestureDetector(
             onTap: () => Navigator.pushReplacement(context,
@@ -292,7 +292,7 @@ class TaxReportFormScreen extends StatelessWidget {
                 child: Text(parsed.label,
                     style: milestone
                         ? AppTheme.sans(14, ink, weight: FontWeight.w700, spacing: -0.2)
-                        : AppTheme.sans(13.5, sub, height: 1.3)),
+                        : AppTheme.sans(14, sub, height: 1.3)),
               ),
             ),
             const SizedBox(width: 12),
@@ -307,7 +307,7 @@ class TaxReportFormScreen extends StatelessWidget {
                   Text(_fmt.format(amount),
                       style: AppTheme.serif(milestone ? 21 : 16.5, ink, spacing: -0.5, height: 1.0)),
                   const SizedBox(width: 3),
-                  Text('원', style: AppTheme.sans(11.5, tert)),
+                  Text('원', style: AppTheme.sans(12, tert)),
                 ],
               ),
             ),
@@ -352,13 +352,13 @@ class TaxReportFormScreen extends StatelessWidget {
             children: [
               Text(_fmt.format(abs), style: AppTheme.serif(36, accent, spacing: -1.2, height: 1.0)),
               const SizedBox(width: 5),
-              Text('원', style: AppTheme.sans(16, sub, weight: FontWeight.w600)),
+              Text('원', style: AppTheme.sans(15, sub, weight: FontWeight.w600)),
             ],
           ),
           const SizedBox(height: 6),
           Text(
             isRefund ? '원천징수로 낸 세금이 결정세액보다 많아 돌려받아요.' : '결정세액이 기납부세액보다 많아 더 내야 해요.',
-            style: AppTheme.sans(12.5, sub, height: 1.45),
+            style: AppTheme.sans(12, sub, height: 1.45),
           ),
         ],
       ),

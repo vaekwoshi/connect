@@ -1,17 +1,24 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/physics.dart';
 import 'package:intl/intl.dart';
 import '../../core/data/db_helper.dart';
+import '../../core/data/expense_category.dart';
 import '../../core/data/expense_item.dart';
 import '../../core/data/income_entry.dart';
 import '../../core/data/kr_holidays.dart';
+import '../../core/notifications/reminder_scheduler.dart';
 import '../theme/app_theme.dart';
+import 'recurring_templates_screen.dart';
+import 'recurring_confirm_screen.dart';
 
 
-// ── 항목 색상 ──
-const _incomeColor = Color(0xFF2FA37A);
-const _creditColor = Color(0xFF3B7DD8);
-const _debitColor  = Color(0xFFD69A3A);
-const _otherColor  = Color(0xFF8E8B85);
+// ── 항목 색상 (파스텔 톤) ──
+const _incomeColor   = Color(0xFF5CB87A); // 수익      — soft green
+const _pmCreditColor = Color(0xFF6B8FD4); // 신용카드  — steel blue
+const _pmDebitColor  = Color(0xFFD4A847); // 체크+현금 — soft amber
+const _pmOtherColor  = Color(0xFF9E9B96); // 기타      — warm gray
 
 const _catCredit = '신용카드';
 const _catDebit  = '체크+현금';
@@ -28,7 +35,8 @@ class ExpenseCalendarScreen extends StatefulWidget {
   State<ExpenseCalendarScreen> createState() => _ExpenseCalendarScreenState();
 }
 
-class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
+class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
+    with TickerProviderStateMixin {
   int _year  = DateTime.now().year;
   int _month = DateTime.now().month;
 
@@ -49,9 +57,42 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
   final _creditCtrl = TextEditingController();
   final _debitCtrl  = TextEditingController();
   final _otherCtrl  = TextEditingController();
+  String _creditCategory = '기타';
+  String _debitCategory  = '기타';
+  String _otherCategory  = '기타';
+
+  int _activeView = 0; // 0=달력, 1=목록, 2=분석, 3=연간
+  List<ExpenseItem> _allExpenses = [];
+  int _recurringPendingCount = 0;
+  int _expenseTarget = 0;
+  Map<int, int> _annualIncome = {}; // month(1~12) → 수입 합계
+
+  // 핀치 줌 — 1단계(기본 7열) · 2단계(가로 2배 폭, 세로 동일).
+  int _zoomLevel = 1;
+  int _activePointers = 0;
+  Offset? _downPos;                      // 탭/패닝 구분용
+  Size _vp = Size.zero;                  // 격자 뷰포트 크기
+  double _panX = 0;                      // 2단계 가로 스크롤 오프셋
+  final Map<int, Offset> _pointers = {}; // 핀치용 활성 포인터
+  double? _pinchBaseDist;                // 핀치 시작 두 손가락 거리
+  double _pinchRatio = 1.0;              // 현재/시작 거리 비
+
+  final _calScrollCtrl = ScrollController();
+  double _calCellHeight = 0; // LayoutBuilder에서 갱신 — 스크롤 오프셋 계산용
+
+  // 가로 패닝 관성 슬라이딩
+  late final AnimationController _panFlingCtrl;
+  double _minPanX = 0.0;
+  final _panVTracker = VelocityTracker.withKind(PointerDeviceKind.touch);
 
   final _fmt = NumberFormat('#,###');
-  static const double _cellH = 62.0;
+
+  // ── 월급날·카드 결제일 ────────────────────────────────────────────
+  int _paydayDay = 25;
+  List<Map<String, dynamic>> _cardDates = [];
+
+  // ── 줌 레벨 파생 ──────────────────────────────────────────────────
+  bool get _showAmounts => _zoomLevel >= 2;
 
   int get _daysInMonth {
     final next = _month == 12 ? DateTime(_year + 1, 1, 1) : DateTime(_year, _month + 1, 1);
@@ -66,11 +107,19 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
   @override
   void initState() {
     super.initState();
+    _panFlingCtrl = AnimationController.unbounded(vsync: this)
+      ..addListener(() {
+        final clamped = _panFlingCtrl.value.clamp(_minPanX, 0.0);
+        setState(() => _panX = clamped);
+        if (clamped == _minPanX || clamped == 0.0) _panFlingCtrl.stop();
+      });
     _load();
   }
 
   @override
   void dispose() {
+    _panFlingCtrl.dispose();
+    _calScrollCtrl.dispose();
     _incomeCtrl.dispose();
     _creditCtrl.dispose();
     _debitCtrl.dispose();
@@ -83,8 +132,21 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
   Future<void> _load() async {
     final profile = await dbService.getProfile();
     final loadedType = (profile?['user_type'] as String?) ?? '직장인';
+    final target = ((profile?['expense_target'] as num?) ?? 0).toInt();
+    final paydayDay = (profile?['pay_day'] as int?) ?? 25;
+    final cards = await dbService.getCardPaymentDates();
     final allExpenses = await dbService.getExpenses();
     final allIncome   = await dbService.getIncomeEntriesForMonth(_year, _month);
+    final pendingCount = await dbService.getPendingRecurringCount(_year, _month);
+
+    // 연간 수입: 12개월 병렬 로드
+    final incFutures = List.generate(
+        12, (i) => dbService.getIncomeEntriesForMonth(_year, i + 1));
+    final incResults = await Future.wait(incFutures);
+    final annualInc = <int, int>{};
+    for (int m = 0; m < 12; m++) {
+      annualInc[m + 1] = incResults[m].fold(0, (s, e) => s + e.amount);
+    }
 
     final expMap = <String, List<ExpenseItem>>{};
     for (final e in allExpenses) {
@@ -123,10 +185,16 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
     if (mounted) {
       setState(() {
         _userType = loadedType;
-        if (_userType == '직장인') _incomeType = '급여'; // 직장인은 급여만
+        if (_userType == '직장인') _incomeType = '급여';
+        _paydayDay = paydayDay;
+        _cardDates = cards;
         _expensesByDay = expMap;
         _incomesByDay  = incMap;
         _dayBatchId    = dayBatch;
+        _allExpenses   = allExpenses;
+        _recurringPendingCount = pendingCount;
+        _expenseTarget = target;
+        _annualIncome  = annualInc;
       });
     }
   }
@@ -152,9 +220,10 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
   int _incomeOf(String key) =>
       (_incomesByDay[key] ?? const []).fold(0, (s, e) => s + e.amount);
 
-  int _catOf(String key, String cat) => (_expensesByDay[key] ?? const [])
+  // 결제수단별 합계 (카테고리 점 표시·prefill용)
+  int _paymentOf(String key, String pm) => (_expensesByDay[key] ?? const [])
       .toSet()
-      .where((e) => e.category == cat)
+      .where((e) => e.paymentMethod == pm)
       .fold(0, (s, e) => s + e.amount);
 
   bool _hasData(String key) =>
@@ -188,6 +257,11 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
         _prefillFromDate(group.reduce((a, b) => a.isBefore(b) ? a : b));
       }
     });
+    if (_selected.isNotEmpty) {
+      _scrollToEditor();
+    } else {
+      _scrollToTop();
+    }
   }
 
   /// 그 날 기록된 소득의 유형(첫 항목 기준). 없으면 근로소득(급여) 기본.
@@ -201,10 +275,16 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
   void _prefillFromDate(DateTime date) {
     final key = _key(date);
     final inc = _incomeOf(key);
-    final cr = _catOf(key, _catCredit);
-    final db = _catOf(key, _catDebit);
-    final ot = _catOf(key, _catOther);
+    final cr = _paymentOf(key, _catCredit);
+    final db = _paymentOf(key, _catDebit);
+    final ot = _paymentOf(key, _catOther);
     _incomeType = _incomeTypeOf(key);
+    // 기존 지출에서 결제수단별 카테고리 복원
+    for (final e in (_expensesByDay[key] ?? []).toSet()) {
+      if (e.paymentMethod == _catCredit) _creditCategory = e.category;
+      else if (e.paymentMethod == _catDebit) _debitCategory = e.category;
+      else if (e.paymentMethod == _catOther) _otherCategory = e.category;
+    }
     _incomeCtrl.text = inc > 0 ? _fmt.format(inc) : '';
     _creditCtrl.text = cr > 0 ? _fmt.format(cr) : '';
     _debitCtrl.text  = db > 0 ? _fmt.format(db) : '';
@@ -217,9 +297,14 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
       final inc = _incomeOf(key);
       _incomeType = _incomeTypeOf(key);
       _incomeCtrl.text = inc > 0 ? _fmt.format(inc) : '';
-      final cr = _catOf(key, _catCredit);
-      final db = _catOf(key, _catDebit);
-      final ot = _catOf(key, _catOther);
+      final cr = _paymentOf(key, _catCredit);
+      final db = _paymentOf(key, _catDebit);
+      final ot = _paymentOf(key, _catOther);
+      for (final e in (_expensesByDay[key] ?? []).toSet()) {
+        if (e.paymentMethod == _catCredit) _creditCategory = e.category;
+        else if (e.paymentMethod == _catDebit) _debitCategory = e.category;
+        else if (e.paymentMethod == _catOther) _otherCategory = e.category;
+      }
       _creditCtrl.text = cr > 0 ? _fmt.format(cr) : '';
       _debitCtrl.text  = db > 0 ? _fmt.format(db) : '';
       _otherCtrl.text  = ot > 0 ? _fmt.format(ot) : '';
@@ -244,7 +329,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
             child: Text(
               '직장인은 급여만 기록해요. 근로 외 기타소득이 연 300만 원을 넘으면 '
               '종합과세 대상 — N잡러로 전환해 따로 기록하세요.',
-              style: AppTheme.sans(11.5, sub, height: 1.45),
+              style: AppTheme.sans(12, sub, height: 1.45),
             ),
           ),
         ],
@@ -275,7 +360,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
         const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.only(left: 58),
-          child: Text(hint, style: AppTheme.sans(11.5, sub, height: 1.4)),
+          child: Text(hint, style: AppTheme.sans(12, sub, height: 1.4)),
         ),
       ],
     );
@@ -299,7 +384,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(label,
-            style: AppTheme.sans(12.5, selected ? ink : sub,
+            style: AppTheme.sans(12, selected ? ink : sub,
                 weight: selected ? FontWeight.w700 : FontWeight.w500)),
       ),
     );
@@ -307,6 +392,9 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
 
   void _clearForm() {
     _incomeType = '급여';
+    _creditCategory = '기타';
+    _debitCategory  = '기타';
+    _otherCategory  = '기타';
     _incomeCtrl.clear();
     _creditCtrl.clear();
     _debitCtrl.clear();
@@ -317,6 +405,34 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
     setState(() {
       _selected.clear();
       _clearForm();
+    });
+    _scrollToTop();
+  }
+
+  // 선택된 날짜의 행 바로 아래(에디터 위치)로 스크롤
+  void _scrollToEditor() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_calScrollCtrl.hasClients || _calCellHeight == 0) return;
+      final earliest = _selected.reduce((a, b) => a.isBefore(b) ? a : b);
+      final edRow = (earliest.day - 1 + _firstOffset) ~/ 7;
+      final target = (edRow + 1) * _calCellHeight - 32.0;
+      final maxExt = _calScrollCtrl.position.maxScrollExtent;
+      if (maxExt <= 0) return;
+      _calScrollCtrl.animateTo(
+        target.clamp(0.0, maxExt),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  void _scrollToTop() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_calScrollCtrl.hasClients) return;
+      final maxExt = _calScrollCtrl.position.maxScrollExtent;
+      if (maxExt <= 0) return;
+      _calScrollCtrl.animateTo(0,
+          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     });
   }
 
@@ -383,15 +499,18 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
     }
     if (cr > 0) {
       await dbService.insertExpense(ExpenseItem(
-        id: '${prefix}_cr', date: first, endDate: endDate, amount: cr, content: _catCredit, category: _catCredit));
+        id: '${prefix}_cr', date: first, endDate: endDate, amount: cr,
+        content: '', category: _creditCategory, paymentMethod: _catCredit));
     }
     if (db > 0) {
       await dbService.insertExpense(ExpenseItem(
-        id: '${prefix}_db', date: first, endDate: endDate, amount: db, content: _catDebit, category: _catDebit));
+        id: '${prefix}_db', date: first, endDate: endDate, amount: db,
+        content: '', category: _debitCategory, paymentMethod: _catDebit));
     }
     if (ot > 0) {
       await dbService.insertExpense(ExpenseItem(
-        id: '${prefix}_ot', date: first, endDate: endDate, amount: ot, content: _catOther, category: _catOther));
+        id: '${prefix}_ot', date: first, endDate: endDate, amount: ot,
+        content: '', category: _otherCategory, paymentMethod: _catOther));
     }
 
     await _load();
@@ -433,7 +552,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
               : widget.initialFocus == 'expense'
                   ? '지출 기록'
                   : '가계부',
-          style: AppTheme.serif(20, ink),
+          style: AppTheme.serif(22, ink),
         ),
         actions: [
           if (_selected.isNotEmpty)
@@ -447,16 +566,31 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
         child: Column(
           children: [
             _buildMonthNav(ink),
+            _buildPaymentStrip(ink, sub),
             AppTheme.hairline(context),
-            _buildSummaryBar(sub),
-            _buildLegend(),
+            _buildViewTabs(ink),
             AppTheme.hairline(context),
-            _buildDowRow(),
-            AppTheme.hairline(context),
+            if (_activeView < 2) _buildSummaryBar(sub),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 32),
-                child: _buildCalendar(ink, sub),
+              child: IndexedStack(
+                index: _activeView,
+                children: [
+                  // 0: 달력
+                  Column(
+                    children: [
+                      if (_recurringPendingCount > 0) _buildRecurringBanner(),
+                      _buildLegend(),
+                      AppTheme.hairline(context),
+                      Expanded(child: _buildCalendar(ink, sub)),
+                    ],
+                  ),
+                  // 1: 목록
+                  _buildListView(ink, sub),
+                  // 2: 분석
+                  _buildAnalysisView(ink, sub),
+                  // 3: 연간
+                  _buildAnnualView(ink, sub),
+                ],
               ),
             ),
           ],
@@ -465,21 +599,440 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
     );
   }
 
-  /// 색 점 범례 — 셀의 색이 무엇을 뜻하는지 안내
+  // ── 월급날 · 카드 결제일 스트립 ──────────────────────────────────
+
+  Widget _buildPaymentStrip(Color ink, Color sub) {
+    final accent = AppTheme.accentColor(context);
+    final line   = AppTheme.line(context);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _showPaydayPicker,
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.1),
+                border: Border.all(color: accent.withValues(alpha: 0.35)),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.payments_outlined, size: 13, color: accent),
+                const SizedBox(width: 5),
+                Text('월급 $_paydayDay일',
+                    style: AppTheme.sans(12, accent, weight: FontWeight.w600)),
+              ]),
+            ),
+          ),
+          ..._cardDates.map((card) => Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: GestureDetector(
+              onTap: () => _showCardOptions(card),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: line),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.credit_card_rounded, size: 13, color: sub),
+                  const SizedBox(width: 5),
+                  Text('${card['name']} ${card['day']}일',
+                      style: AppTheme.sans(12, ink, weight: FontWeight.w500)),
+                ]),
+              ),
+            ),
+          )),
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: GestureDetector(
+              onTap: _showAddCardDialog,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: line),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add_rounded, size: 14, color: sub),
+                  const SizedBox(width: 4),
+                  Text('카드 추가', style: AppTheme.sans(12, sub)),
+                ]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPaydayPicker() async {
+    final ink    = AppTheme.ink(context);
+    final accent = AppTheme.accentColor(context);
+    final bg     = AppTheme.backgroundColor(context);
+    final line   = AppTheme.line(context);
+    final sub    = AppTheme.inkSecondary(context);
+
+    final confirmed = await showDialog<int>(
+      context: context,
+      builder: (ctx) {
+        int current = _paydayDay;
+        return StatefulBuilder(builder: (ctx, setSt) {
+          return AlertDialog(
+            backgroundColor: bg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+              side: BorderSide(color: line),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            title: Text('월급날 설정', style: AppTheme.serif(17, ink)),
+            content: SizedBox(
+              height: 120,
+              child: ListWheelScrollView.useDelegate(
+                itemExtent: 36,
+                onSelectedItemChanged: (i) => setSt(() => current = i + 1),
+                controller: FixedExtentScrollController(initialItem: _paydayDay - 1),
+                childDelegate: ListWheelChildBuilderDelegate(
+                  childCount: 31,
+                  builder: (_, i) => Center(
+                    child: Text('${i + 1}일',
+                        style: AppTheme.sans(
+                            16,
+                            i + 1 == current ? ink : AppTheme.inkTertiary(ctx),
+                            weight: i + 1 == current
+                                ? FontWeight.w700
+                                : FontWeight.w400)),
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 8, 12),
+                  child: Text('취소', style: AppTheme.sans(14, sub)),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx, current),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                  child: Text('저장',
+                      style: AppTheme.sans(14, accent, weight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          );
+        });
+      },
+    );
+
+    if (confirmed == null || !mounted) return;
+    final profile = await dbService.getProfile() ?? {};
+    await dbService.saveProfile({...profile, 'pay_day': confirmed});
+    if (!kIsWeb) await ReminderScheduler.schedulePayday(confirmed);
+    if (mounted) setState(() => _paydayDay = confirmed);
+  }
+
+  Future<void> _showAddCardDialog() async {
+    final nameCtrl = TextEditingController();
+    int selectedDay = 1;
+    final ink    = AppTheme.ink(context);
+    final accent = AppTheme.accentColor(context);
+    final bg     = AppTheme.backgroundColor(context);
+    final line   = AppTheme.line(context);
+    final sub    = AppTheme.inkSecondary(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        int currentDay = selectedDay;
+        return StatefulBuilder(builder: (ctx, setSt) {
+          return AlertDialog(
+            backgroundColor: bg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+              side: BorderSide(color: line),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            title: Text('카드 결제일 추가', style: AppTheme.serif(17, ink)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('카드 이름',
+                    style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  style: AppTheme.sans(15, ink),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '예: 신한카드',
+                    hintStyle: AppTheme.sans(15, AppTheme.inkTertiary(ctx)),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    border: UnderlineInputBorder(
+                        borderSide: BorderSide(color: line)),
+                    enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: line)),
+                    focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: accent, width: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('결제일',
+                    style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 100,
+                  child: ListWheelScrollView.useDelegate(
+                    itemExtent: 32,
+                    onSelectedItemChanged: (i) =>
+                        setSt(() => currentDay = i + 1),
+                    controller:
+                        FixedExtentScrollController(initialItem: currentDay - 1),
+                    childDelegate: ListWheelChildBuilderDelegate(
+                      childCount: 31,
+                      builder: (_, i) => Center(
+                        child: Text('${i + 1}일',
+                            style: AppTheme.sans(
+                                14,
+                                i + 1 == currentDay
+                                    ? ink
+                                    : AppTheme.inkTertiary(ctx),
+                                weight: i + 1 == currentDay
+                                    ? FontWeight.w700
+                                    : FontWeight.w400)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 8, 12),
+                  child: Text('취소', style: AppTheme.sans(14, sub)),
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  selectedDay = currentDay;
+                  Navigator.pop(ctx, true);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                  child: Text('추가',
+                      style:
+                          AppTheme.sans(14, accent, weight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          );
+        });
+      },
+    );
+
+    final name = nameCtrl.text.trim();
+    nameCtrl.dispose();
+    if (confirmed != true || name.isEmpty || !mounted) return;
+
+    await dbService.addCardPaymentDate(name, selectedDay);
+    final updated = await dbService.getCardPaymentDates();
+    if (!kIsWeb) await ReminderScheduler.scheduleCardPayments(updated);
+    if (mounted) setState(() => _cardDates = updated);
+  }
+
+  Future<void> _showCardOptions(Map<String, dynamic> card) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final ink  = AppTheme.ink(ctx);
+        final bg   = AppTheme.backgroundColor(ctx);
+        final line = AppTheme.line(ctx);
+        final sub  = AppTheme.inkSecondary(ctx);
+        return AlertDialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: line),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          title: Text('${card['name']} ${card['day']}일',
+              style: AppTheme.serif(17, ink)),
+          content: GestureDetector(
+            onTap: () => Navigator.pop(ctx, true),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('삭제',
+                  style: AppTheme.sans(15, AppTheme.colorDanger,
+                      weight: FontWeight.w600)),
+            ),
+          ),
+          actions: [
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                child: Text('취소', style: AppTheme.sans(14, sub)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+    await dbService.deleteCardPaymentDate(card['id'] as int);
+    final updated = await dbService.getCardPaymentDates();
+    if (!kIsWeb) await ReminderScheduler.scheduleCardPayments(updated);
+    if (mounted) setState(() => _cardDates = updated);
+  }
+
+  /// 고정 지출 미확인 배너
+  Widget _buildRecurringBanner() {
+    final accent = AppTheme.accentColor(context);
+    return GestureDetector(
+      onTap: () async {
+        final added = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => RecurringConfirmScreen(year: _year, month: _month),
+          ),
+        );
+        if (added == true) _load();
+      },
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: accent.withAlpha(15),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: accent.withAlpha(60), width: 1),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.event_repeat_outlined, size: 18, color: accent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '고정 지출 확인 대기',
+                    style: AppTheme.sans(11, accent,
+                        weight: FontWeight.w600, spacing: 0.3),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$_recurringPendingCount건 미처리',
+                    style: AppTheme.sans(14, accent, weight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: accent.withAlpha(26),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text('확인하기',
+                  style: AppTheme.sans(12, accent, weight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 색 점 범례 — 수익 + 결제수단 3종 + 고정지출 링크
   Widget _buildLegend() {
-    Widget item(Color c, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
+    final sub = AppTheme.inkSecondary(context);
+    final accent = AppTheme.accentColor(context);
+    Widget dot(Color c, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 7, height: 7, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-          const SizedBox(width: 5),
-          Text(label, style: AppTheme.sans(10.5, AppTheme.inkSecondary(context), weight: FontWeight.w500)),
+          const SizedBox(width: 4),
+          Text(label, style: AppTheme.sans(11, sub, weight: FontWeight.w500)),
         ]);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-      child: Wrap(spacing: 14, runSpacing: 6, children: [
-        item(_incomeColor, '수익'),
-        item(_creditColor, '신용카드'),
-        item(_debitColor, '체크/현금'),
-        item(_otherColor, '기타'),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 7),
+      child: Row(children: [
+        Wrap(spacing: 10, runSpacing: 4, children: [
+          dot(_incomeColor,   '수익'),
+          dot(_pmCreditColor, '신용카드'),
+          dot(_pmDebitColor,  '체크/현금'),
+          dot(_pmOtherColor,  '기타'),
+        ]),
+        const Spacer(),
+        GestureDetector(
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RecurringTemplatesScreen()),
+            );
+            _load();
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text('고정지출', style: AppTheme.sans(11, accent, weight: FontWeight.w600)),
+              const SizedBox(width: 2),
+              Icon(Icons.arrow_forward_ios_rounded, size: 10, color: accent),
+            ]),
+          ),
+        ),
       ]),
+    );
+  }
+
+  Widget _buildViewTabs(Color ink) {
+    const labels = ['달력', '목록', '분석', '연간'];
+    final accent = AppTheme.accentColor(context);
+    final sub = AppTheme.inkSecondary(context);
+    return Row(
+      children: List.generate(4, (i) {
+        final selected = _activeView == i;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () {
+              if (_activeView != i) setState(() { _activeView = i; _deselect(); });
+            },
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: selected ? accent : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                labels[i],
+                style: AppTheme.sans(13, selected ? accent : sub,
+                    weight: selected ? FontWeight.w700 : FontWeight.w500),
+              ),
+            ),
+          ),
+        );
+      }),
     );
   }
 
@@ -496,6 +1049,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
                 if (_month == 1) { _year--; _month = 12; } else { _month--; }
                 _selected.clear(); _clearForm();
               });
+              _scrollToTop();
               _load();
             },
           ),
@@ -507,6 +1061,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
                 if (_month == 12) { _year++; _month = 1; } else { _month++; }
                 _selected.clear(); _clearForm();
               });
+              _scrollToTop();
               _load();
             },
           ),
@@ -517,129 +1072,350 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
 
   Widget _buildSummaryBar(Color sub) {
     final balance = _monthIncomeTotal - _monthExpenseTotal;
-    final ink = AppTheme.ink(context);
-    final balanceColor = balance >= 0 ? ink : AppTheme.colorDanger;
+    final balanceColor = balance >= 0 ? _incomeColor : AppTheme.colorDanger;
+    Widget divider = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Container(width: 1, height: 30, color: AppTheme.line(context)),
+    );
+    Widget cell(String label, String value, Color valueColor,
+        {bool emphasize = false, IconData? icon}) {
+      return Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: AppTheme.sans(11, sub, weight: FontWeight.w500, spacing: 0.2)),
+            const SizedBox(height: 3),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              if (icon != null) ...[
+                Icon(icon, size: 13, color: valueColor),
+                const SizedBox(width: 2),
+              ],
+              Flexible(
+                child: Text(value,
+                    style: AppTheme.sans(emphasize ? 15 : 13, valueColor,
+                        weight: emphasize ? FontWeight.w800 : FontWeight.w700),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+            ]),
+          ],
+        ),
+      );
+    }
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(
-        children: [
-          Expanded(child: _summaryItem('수입', _monthIncomeTotal, ink)),
-          Container(width: 1, height: 32, color: AppTheme.line(context)),
-          Expanded(child: _summaryItem('지출', _monthExpenseTotal, AppTheme.colorDanger)),
-          Container(width: 1, height: 32, color: AppTheme.line(context)),
-          Expanded(child: _summaryItem('잔액', balance.abs(), balanceColor,
-              prefix: balance < 0 ? '-' : '')),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(children: [
+        cell('수입', '${_fmt.format(_monthIncomeTotal)}원', _incomeColor),
+        divider,
+        cell('지출', '${_fmt.format(_monthExpenseTotal)}원', AppTheme.colorDanger),
+        divider,
+        cell(
+          '잔액',
+          '${balance < 0 ? '-' : ''}${_fmt.format(balance.abs())}원',
+          balanceColor,
+          emphasize: true,
+          icon: balance >= 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+        ),
+      ]),
     );
   }
 
-  Widget _summaryItem(String label, int amount, Color color, {String prefix = ''}) {
-    return Column(
-      children: [
-        Text(label, style: AppTheme.label(context)),
-        const SizedBox(height: 4),
-        Text('$prefix${_fmt.format(amount)}원',
-            style: AppTheme.sans(13, color, weight: FontWeight.w700),
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-      ],
-    );
-  }
-
-  Widget _buildDowRow() {
+  Widget _dowLabel(int i) {
     const labels = ['월', '화', '수', '목', '금', '토', '일'];
+    final isSun = i == 6;
+    final isSat = i == 5;
+    return Text(labels[i],
+        style: AppTheme.label(context,
+            color: isSun
+                ? AppTheme.colorDanger
+                : isSat
+                    ? AppTheme.accentColor(context)
+                    : null));
+  }
+
+  /// 요일 행 오버레이 — 2단계 가로 폭/스크롤을 반영해 날짜 칸 위에 정렬
+  Widget _buildOverlayDow() {
+    final vp = _vp;
+    if (vp == Size.zero || _zoomLevel == 1) {
+      return SizedBox(
+        height: 28,
+        child: Row(
+          children: List.generate(
+              7, (i) => Expanded(child: Center(child: _dowLabel(i)))),
+        ),
+      );
+    }
+    final cellW = vp.width / 7 * 2; // 2단계: 한 칸 = 날짜칸 2개 폭
     return SizedBox(
       height: 28,
-      child: Row(
-        children: List.generate(7, (i) {
-          final isSun = i == 6;
-          final isSat = i == 5;
-          return Expanded(
-            child: Center(
-              child: Text(labels[i],
-                  style: AppTheme.label(context,
-                      color: isSun
-                          ? AppTheme.colorDanger
-                          : isSat
-                              ? AppTheme.accentColor(context)
-                              : null)),
-            ),
-          );
-        }),
+      width: double.infinity,
+      child: ClipRect(
+        child: Stack(
+          children: List.generate(7, (i) {
+            final leftX = i * cellW + _panX;
+            if (leftX + cellW < 0 || leftX > vp.width) return const SizedBox();
+            return Positioned(
+              left: leftX,
+              width: cellW,
+              top: 0,
+              bottom: 0,
+              child: Center(child: _dowLabel(i)),
+            );
+          }),
+        ),
       ),
     );
   }
 
   // ── 달력 본체 ────────────────────────────────────────────────────
 
+  /// 핀치를 놓을 때 손가락 벌어짐/오므림으로 단계 결정.
+  void _resolvePinch() {
+    if (_pinchRatio > 1.18 && _zoomLevel == 1) {
+      _setZoom(2);
+    } else if (_pinchRatio < 0.85 && _zoomLevel == 2) {
+      _setZoom(1);
+    }
+    _pinchBaseDist = null;
+    _pinchRatio = 1.0;
+  }
+
+  void _setZoom(int level) {
+    if (level == _zoomLevel) return;
+    setState(() {
+      _zoomLevel = level;
+      if (level == 1) {
+        _panX = 0;
+      } else {
+        // 핀치 중심 열이 손가락 아래 유지되도록 가로 오프셋 설정.
+        final w = _vp.width;
+        double ratio = 0.5;
+        if (_pointers.isNotEmpty) {
+          final mid = _pointers.values.reduce((a, b) => a + b) /
+              _pointers.length.toDouble();
+          ratio = (mid.dx / w).clamp(0.0, 1.0);
+        }
+        _panX = (-ratio * w).clamp(-w, 0.0);
+      }
+    });
+  }
+
   Widget _buildCalendar(Color ink, Color sub) {
     _cellKeys.clear();
+    final lineColor = AppTheme.lineStrong(context);
+    final weekCount = ((_daysInMonth + _firstOffset) / 7).ceil();
 
-    int? editorRow;
-    if (_selected.isNotEmpty && !_isDragging) {
-      final maxDate = _selected.reduce((a, b) => a.isAfter(b) ? a : b);
-      editorRow = (maxDate.day - 1 + _firstOffset) ~/ 7;
-    }
+    return LayoutBuilder(builder: (context, constraints) {
+      _vp = Size(constraints.maxWidth, constraints.maxHeight);
+      final w = constraints.maxWidth;
+      final zoomed = _zoomLevel > 1;
+      final cw = zoomed ? w / 7 * 2 : w / 7;
+      final ch = _zoomLevel == 1
+          ? (constraints.maxHeight / weekCount).clamp(0.0, 74.0)
+          : constraints.maxHeight / weekCount;
+      _calCellHeight = ch;
+      final totalW = cw * 7;
+      final minPanX = (w - totalW).clamp(double.negativeInfinity, 0.0);
+      _minPanX = minPanX;
 
-    final rows = <Widget>[];
-    for (int row = 0; row < 6; row++) {
-      final firstIdx = row * 7 - _firstOffset;
-      if (firstIdx >= _daysInMonth) break;
+      final showEditor = _selected.isNotEmpty && !_isDragging;
 
-      rows.add(SizedBox(
-        height: _cellH,
+      // 선택된 날짜가 속한 행 번호
+      int? editorRow;
+      if (showEditor) {
+        final earliest = _selected.reduce((a, b) => a.isBefore(b) ? a : b);
+        editorRow = (earliest.day - 1 + _firstOffset) ~/ 7;
+      }
+
+      // 단일 주(週) 행 위젯
+      Widget buildRow(int row) => SizedBox(
+        height: ch,
         child: Row(
           children: List.generate(7, (col) {
             final idx = row * 7 + col - _firstOffset;
-            if (idx < 0 || idx >= _daysInMonth) {
-              return const Expanded(child: SizedBox());
-            }
-            return Expanded(child: _buildCell(DateTime(_year, _month, idx + 1), ink, sub));
+            return SizedBox(
+              width: cw,
+              height: ch,
+              child: (idx < 0 || idx >= _daysInMonth)
+                  ? Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          right:  BorderSide(color: lineColor, width: 1),
+                          bottom: BorderSide(color: lineColor, width: 1),
+                        ),
+                      ),
+                    )
+                  : _buildCell(DateTime(_year, _month, idx + 1), ink, sub),
+            );
           }),
         ),
-      ));
+      );
 
-      if (editorRow == row) {
-        rows.add(_buildInlineEditor(ink, sub));
+      // 행 목록을 핀치줌·패닝이 적용된 섹션 위젯으로 변환
+      // (에디터와 독립 — 에디터는 이 변환 밖에 위치)
+      Widget buildSection(List<Widget> rows) {
+        if (rows.isEmpty) return const SizedBox.shrink();
+        // 섹션 높이를 행 수로 고정 — 세로 스크롤뷰(무한 높이) 안에서
+        // OverflowBox가 세로로 붕괴하지 않도록. OverflowBox는 가로 줌 패닝 전용.
+        final sectionHeight = rows.length * ch;
+        final g = Container(
+          width: totalW,
+          height: sectionHeight,
+          decoration: BoxDecoration(
+            color: AppTheme.surface(context),
+            border: Border(left: BorderSide(color: lineColor, width: 1)),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: rows),
+        );
+        return SizedBox(
+          width: w,
+          height: sectionHeight,
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              minWidth: 0,
+              maxWidth: double.infinity,
+              minHeight: sectionHeight,
+              maxHeight: sectionHeight,
+              child: Transform.translate(
+                offset: Offset(_panX, 0),
+                child: g,
+              ),
+            ),
+          ),
+        );
       }
-    }
 
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (e) {
-        final date = _dateAtGlobal(e.position);
-        if (date == null) return;
-        setState(() {
-          _dragStart = date;
-          _dragCurrent = date;
-          _isDragging = false;
-        });
-      },
-      onPointerMove: (e) {
-        if (_dragStart == null) return;
-        final date = _dateAtGlobal(e.position);
-        if (date == null || date == _dragCurrent) return;
-        _dragCurrent = date;
-        setState(() {
-          _isDragging = true;
-          _selected..clear()..addAll(_rangeBetween(_dragStart!, date));
-        });
-      },
-      onPointerUp: (e) {
-        if (_dragStart != null && !_isDragging) {
-          _toggleSingle(_dragStart!);
-        } else if (_isDragging) {
-          setState(() => _isDragging = false);
-          _prefillForm();
+      // 에디터 기준으로 행 분리: 위(0..editorRow) / 아래(editorRow+1..end)
+      final topRows = <Widget>[];
+      final bottomRows = <Widget>[];
+      for (int row = 0; row < weekCount; row++) {
+        final r = buildRow(row);
+        if (editorRow == null || row <= editorRow) {
+          topRows.add(r);
+        } else {
+          bottomRows.add(r);
         }
-        _dragStart = null;
-        _dragCurrent = null;
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        child: Column(children: rows),
-      ),
-    );
+      }
+
+      final touchArea = Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (e) {
+          _panFlingCtrl.stop();
+          _activePointers++;
+          _pointers[e.pointer] = e.position;
+          _downPos = e.position;
+          if (_pointers.length >= 2) {
+            _dragStart = null;
+            final pts = _pointers.values.toList();
+            _pinchBaseDist = (pts[0] - pts[1]).distance;
+            return;
+          }
+          if (zoomed) return;
+          final date = _dateAtGlobal(e.position);
+          if (date == null) return;
+          setState(() {
+            _dragStart = date;
+            _dragCurrent = date;
+            _isDragging = false;
+          });
+        },
+        onPointerMove: (e) {
+          if (_pointers.containsKey(e.pointer)) _pointers[e.pointer] = e.position;
+          if (_pointers.length >= 2) {
+            final pts = _pointers.values.toList();
+            final dist = (pts[0] - pts[1]).distance;
+            if (_pinchBaseDist != null && _pinchBaseDist! > 0) {
+              _pinchRatio = dist / _pinchBaseDist!;
+            }
+            return;
+          }
+          if (zoomed) {
+            final moved = _downPos == null ? 999.0 : (e.position - _downPos!).distance;
+            if (moved < 20) return;
+            _panVTracker.addPosition(e.timeStamp, e.position);
+            setState(() {
+              _panX = (_panX + e.delta.dx).clamp(minPanX, 0.0);
+            });
+            return;
+          }
+          if (_dragStart == null) return;
+          final date = _dateAtGlobal(e.position);
+          if (date == null || date == _dragCurrent) return;
+          _dragCurrent = date;
+          setState(() {
+            _isDragging = true;
+            _selected..clear()..addAll(_rangeBetween(_dragStart!, date));
+          });
+        },
+        onPointerUp: (e) {
+          final wasPinch = _pointers.length >= 2 || _pinchBaseDist != null;
+          _pointers.remove(e.pointer);
+          _activePointers = (_activePointers - 1).clamp(0, 10);
+          if (wasPinch) {
+            if (_pointers.isEmpty) _resolvePinch();
+            _dragStart = null;
+            return;
+          }
+          final moved = _downPos == null ? 999.0 : (e.position - _downPos!).distance;
+          if (zoomed) {
+            if (moved < 20) {
+              final date = _dateAtGlobal(e.position);
+              if (date != null) _toggleSingle(date);
+            } else {
+              final vel = _panVTracker.getVelocity().pixelsPerSecond.dx;
+              if (vel.abs() > 80) {
+                _panFlingCtrl.value = _panX;
+                _panFlingCtrl.animateWith(FrictionSimulation(0.135, _panX, vel));
+              }
+            }
+            _dragStart = null;
+            return;
+          }
+          if (_dragStart != null && !_isDragging) {
+            _toggleSingle(_dragStart!);
+          } else if (_isDragging) {
+            setState(() => _isDragging = false);
+            _prefillForm();
+            _scrollToEditor();
+          }
+          _dragStart = null;
+          _dragCurrent = null;
+        },
+        onPointerCancel: (e) {
+          _pointers.remove(e.pointer);
+          _activePointers = (_activePointers - 1).clamp(0, 10);
+        },
+        // NeverScrollableScrollPhysics → 사용자 스크롤 비활성,
+        // ScrollController로만 프로그래밍 방식 스크롤.
+        child: SingleChildScrollView(
+          controller: _calScrollCtrl,
+          physics: const NeverScrollableScrollPhysics(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              buildSection(topRows),
+              if (showEditor)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+                  child: _buildInlineEditor(ink, sub),
+                ),
+              buildSection(bottomRows),
+            ],
+          ),
+        ),
+      );
+
+      return Column(
+        children: [
+          _buildOverlayDow(),
+          Container(height: 1, color: lineColor),
+          Expanded(child: touchArea),
+        ],
+      );
+    });
   }
 
   Widget _buildCell(DateTime date, Color ink, Color sub) {
@@ -656,23 +1432,22 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
     final isSelected = _selected.contains(date);
     final isDark = AppTheme.isDark(context);
     final accent = AppTheme.accentColor(context);
+    final lineColor = AppTheme.lineStrong(context);
 
     final now = DateTime.now();
     final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
 
     final income = _incomeOf(key);
-    final cr = _catOf(key, _catCredit);
-    final db = _catOf(key, _catDebit);
-    final ot = _catOf(key, _catOther);
+    final dayExps = (_expensesByDay[key] ?? []).toSet().toList();
 
-    // 선택 연결 — 드래그 다중선택 시 옅은 배경을 이어 붙인다(테두리 없음).
+    // 선택 연결
     final prevDay = date.subtract(const Duration(days: 1));
     final nextDay = date.add(const Duration(days: 1));
     final selConnLeft  = isSelected && _selected.contains(prevDay);
     final selConnRight = isSelected && _selected.contains(nextDay);
     final selBg = accent.withValues(alpha: isDark ? 0.24 : 0.12);
 
-    // 날짜 숫자 — 오늘은 채운 원 안에(흰 글씨), 평소엔 요일색.
+    // 날짜 숫자
     final bool todayPill = isToday && !isSelected;
     final Widget dayNumber = Container(
       width: 22,
@@ -685,46 +1460,237 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
               weight: (isSelected || isToday) ? FontWeight.w800 : FontWeight.w600)),
     );
 
-    return Container(
-      key: gkey,
-      child: Container(
-        margin: EdgeInsets.only(
-          left:  selConnLeft  ? 0 : 2,
-          right: selConnRight ? 0 : 2,
-          top: 2, bottom: 2,
-        ),
+    // 범위 지출 (endDate가 있고 시작일과 다른 것)
+    final rangeExps = dayExps
+        .where((e) => e.endDate != null &&
+            !(e.endDate!.year == e.date.year &&
+              e.endDate!.month == e.date.month &&
+              e.endDate!.day == e.date.day))
+        .toList();
+
+    // 범위 지출 deduplicate: 같은 날짜범위+결제수단은 1개만
+    final seenBars = <String>{};
+    final uniqueRangeExps = <ExpenseItem>[];
+    for (final e in rangeExps) {
+      final bk = '${e.date.day}_${e.endDate!.day}_${e.paymentMethod}';
+      if (seenBars.add(bk)) uniqueRangeExps.add(e);
+    }
+    final bars = uniqueRangeExps.take(3).toList();
+
+    // 단일 지출 (범위 아님)
+    final singleExps = dayExps.where((e) =>
+        e.endDate == null ||
+        (e.endDate!.year == e.date.year &&
+         e.endDate!.month == e.date.month &&
+         e.endDate!.day == e.date.day)).toList();
+    final hasCr  = singleExps.any((e) => e.paymentMethod == _catCredit);
+    final hasDeb = singleExps.any((e) => e.paymentMethod == _catDebit);
+    final hasOth = singleExps.any((e) => e.paymentMethod == _catOther);
+
+    // 범위 바 빌더
+    Widget rangeBar(ExpenseItem e) {
+      final isBarStart = e.date.year == date.year &&
+          e.date.month == date.month &&
+          e.date.day == date.day;
+      final isBarEnd = e.endDate != null &&
+          e.endDate!.year == date.year &&
+          e.endDate!.month == date.month &&
+          e.endDate!.day == date.day;
+      final color = _pmColorOf(e.paymentMethod);
+      return Container(
+        height: 7,
         decoration: BoxDecoration(
-          color: isSelected ? selBg : null,
+          color: color.withValues(alpha: 0.85),
           borderRadius: BorderRadius.only(
-            topLeft:     selConnLeft  ? Radius.zero : const Radius.circular(10),
-            bottomLeft:  selConnLeft  ? Radius.zero : const Radius.circular(10),
-            topRight:    selConnRight ? Radius.zero : const Radius.circular(10),
-            bottomRight: selConnRight ? Radius.zero : const Radius.circular(10),
+            topLeft:     isBarStart ? const Radius.circular(4) : Radius.zero,
+            bottomLeft:  isBarStart ? const Radius.circular(4) : Radius.zero,
+            topRight:    isBarEnd   ? const Radius.circular(4) : Radius.zero,
+            bottomRight: isBarEnd   ? const Radius.circular(4) : Radius.zero,
           ),
         ),
-        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 3),
-        child: Column(
+        margin: EdgeInsets.only(
+          left:  isBarStart ? 5 : 0,
+          right: isBarEnd   ? 5 : 0,
+          bottom: 2,
+        ),
+      );
+    }
+
+    // ── 2단계 레인: 점(단일) → 막대(범위)로 같은 줄에서 바로 연결 ──
+    Widget laneBar(Color color, bool range, bool start, bool end, int amt, String sign) {
+      final roundL = !range || start;
+      final roundR = !range || end;
+      return Container(
+        height: 13,
+        margin: EdgeInsets.only(left: roundL ? 4 : 0, right: roundR ? 4 : 0, bottom: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.horizontal(
+            left: Radius.circular(roundL ? 6 : 0),
+            right: Radius.circular(roundR ? 6 : 0),
+          ),
+        ),
+        // 시작 칸에만 금액 표기 — 범위 중간/끝은 막대만 이어짐.
+        child: (roundL && amt > 0)
+            ? Text('$sign${_fmt.format(amt)}',
+                style: AppTheme.sans(8.5, Colors.white, weight: FontWeight.w700),
+                softWrap: false, overflow: TextOverflow.clip)
+            : null,
+      );
+    }
+
+    Widget? laneInc() {
+      if (income == 0) return null;
+      IncomeEntry? r;
+      for (final e in (_incomesByDay[key] ?? const <IncomeEntry>[])) {
+        if (e.endDate != null &&
+            !(e.endDate!.year == e.date.year &&
+              e.endDate!.month == e.date.month &&
+              e.endDate!.day == e.date.day)) { r = e; break; }
+      }
+      if (r == null) return laneBar(_incomeColor, false, true, true, income, '+');
+      final st = r.date.month == date.month && r.date.day == date.day;
+      final en = r.endDate!.month == date.month && r.endDate!.day == date.day;
+      return laneBar(_incomeColor, true, st, en, income, '+');
+    }
+
+    Widget? laneExp(String pm, Color color) {
+      final amt = _paymentOf(key, pm);
+      if (amt == 0) return null;
+      ExpenseItem? r;
+      for (final e in dayExps.where((e) => e.paymentMethod == pm)) {
+        if (e.endDate != null &&
+            !(e.endDate!.year == e.date.year &&
+              e.endDate!.month == e.date.month &&
+              e.endDate!.day == e.date.day)) { r = e; break; }
+      }
+      if (r == null) return laneBar(color, false, true, true, amt, '-');
+      final st = r.date.month == date.month && r.date.day == date.day;
+      final en = r.endDate!.month == date.month && r.endDate!.day == date.day;
+      return laneBar(color, true, st, en, amt, '-');
+    }
+
+    final crLane = laneExp(_catCredit, _pmCreditColor);
+    final dbLane = laneExp(_catDebit, _pmDebitColor);
+    final otLane = laneExp(_catOther, _pmOtherColor);
+    final incLane = laneInc();
+
+    final l2Content = Padding(
+      padding: const EdgeInsets.only(top: 4, left: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(alignment: Alignment.topLeft, child: dayNumber),
+          const SizedBox(height: 3),
+          if (incLane != null) incLane,
+          if (crLane != null) crLane,
+          if (dbLane != null) dbLane,
+          if (otLane != null) otLane,
+        ],
+      ),
+    );
+
+    final l1Content = Stack(
+      children: [
+        Positioned.fill(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                dayNumber,
+                const SizedBox(height: 2),
+                SizedBox(
+                  width: double.infinity,
+                  child: bars.isEmpty
+                      ? Wrap(
+                          spacing: 3, runSpacing: 3,
+                          alignment: WrapAlignment.center,
+                          runAlignment: WrapAlignment.start,
+                          children: [
+                            if (income > 0) _catDot(_incomeColor, isDark),
+                            if (hasCr) _catDot(_pmCreditColor, isDark),
+                            if (hasDeb) _catDot(_pmDebitColor, isDark),
+                            if (hasOth) _catDot(_pmOtherColor, isDark),
+                          ],
+                        )
+                      : income > 0
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: _catDot(_incomeColor, isDark),
+                            )
+                          : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (bars.isNotEmpty)
+          Positioned(
+            left: 0, right: 0, bottom: 4,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: bars.map(rangeBar).toList(),
+            ),
+          ),
+      ],
+    );
+
+    return Container(
+        key: gkey,
+        decoration: BoxDecoration(
+          border: Border(
+            right:  BorderSide(color: lineColor, width: 1),
+            bottom: BorderSide(color: lineColor, width: 1),
+          ),
+        ),
+        child: Stack(
           children: [
-            dayNumber,
-            const SizedBox(height: 3),
-            Expanded(
-              child: Wrap(
-                spacing: 3,
-                runSpacing: 3,
-                alignment: WrapAlignment.center,
-                runAlignment: WrapAlignment.start,
-                children: [
-                  if (income > 0) _catDot(_incomeColor, isDark),
-                  if (cr > 0)     _catDot(_creditColor, isDark),
-                  if (db > 0)     _catDot(_debitColor,  isDark),
-                  if (ot > 0)     _catDot(_otherColor,  isDark),
-                ],
+            // ① 선택 배경 (inner margin 유지)
+            Positioned.fill(
+              child: Container(
+                margin: EdgeInsets.only(
+                  left:  selConnLeft  ? 0 : 2,
+                  right: selConnRight ? 0 : 2,
+                  top: 2, bottom: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: isSelected ? selBg : null,
+                  borderRadius: BorderRadius.only(
+                    topLeft:     selConnLeft  ? Radius.zero : const Radius.circular(6),
+                    bottomLeft:  selConnLeft  ? Radius.zero : const Radius.circular(6),
+                    topRight:    selConnRight ? Radius.zero : const Radius.circular(6),
+                    bottomRight: selConnRight ? Radius.zero : const Radius.circular(6),
+                  ),
+                ),
+              ),
+            ),
+
+            // ② 셀 콘텐츠 — 단계 전환 시 페이드
+            Positioned.fill(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                transitionBuilder: (child, anim) =>
+                    FadeTransition(opacity: anim, child: child),
+                child: KeyedSubtree(
+                  key: ValueKey('${date.day}_$_zoomLevel'),
+                  child: _showAmounts ? l2Content : l1Content,
+                ),
               ),
             ),
           ],
         ),
-      ),
-    );
+      );
+  }
+
+  Color _pmColorOf(String pm) {
+    switch (pm) {
+      case _catCredit: return _pmCreditColor;
+      case _catDebit:  return _pmDebitColor;
+      default:         return _pmOtherColor;
+    }
   }
 
   /// 카테고리 색 점 — 숫자 대신 무슨 항목이 있는지 색으로 표시
@@ -743,6 +1709,568 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
     );
   }
 
+  // ── 목록 뷰 ──────────────────────────────────────────────────────
+
+  Widget _buildListView(Color ink, Color sub) {
+    final allUniqueExp = _expensesByDay.values.expand((l) => l).toSet().toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final allUniqueInc = _incomesByDay.values.expand((l) => l).toSet().toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    // 날짜 키 set (합집합)
+    final dayKeys = <String>{
+      ...allUniqueExp.map((e) => _key(e.date)),
+      ...allUniqueInc.map((e) => _key(e.date)),
+    };
+    final sortedDays = dayKeys.toList()..sort((a, b) => b.compareTo(a));
+
+    if (sortedDays.isEmpty) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.receipt_long_outlined, size: 36, color: AppTheme.inkTertiary(context)),
+          const SizedBox(height: 12),
+          Text('이번 달 기록이 없어요',
+              style: AppTheme.sans(15, AppTheme.inkTertiary(context), weight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text('달력에서 날짜를 탭해 입력하세요.',
+              style: AppTheme.sans(13, AppTheme.inkTertiary(context))),
+        ]),
+      );
+    }
+
+    final tert = AppTheme.inkTertiary(context);
+    const wd = ['월', '화', '수', '목', '금', '토', '일'];
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      itemCount: sortedDays.length,
+      itemBuilder: (context, idx) {
+        final key = sortedDays[idx];
+        final day = DateTime.parse(key);
+        final exps = allUniqueExp.where((e) => _key(e.date) == key).toList();
+        final incs = allUniqueInc.where((e) => _key(e.date) == key).toList();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (idx > 0) const SizedBox(height: 16),
+            // 날짜 헤더
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Text('${day.month}월 ${day.day}일',
+                      style: AppTheme.sans(13, ink, weight: FontWeight.w700)),
+                  const SizedBox(width: 6),
+                  Text('(${wd[day.weekday - 1]})',
+                      style: AppTheme.sans(12, tert)),
+                ],
+              ),
+            ),
+            AppTheme.hairline(context),
+            for (final inc in incs) _listIncomeRow(inc, ink, sub, tert),
+            for (final exp in exps) _listExpenseRow(exp, ink, sub, tert),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _listIncomeRow(IncomeEntry entry, Color ink, Color sub, Color tert) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      child: Row(
+        children: [
+          Container(
+            width: 28, height: 28,
+            decoration: BoxDecoration(
+              color: _incomeColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Icon(Icons.add_rounded, size: 16, color: _incomeColor),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(entry.incomeType == '급여' ? '근로소득' : '기타 수익',
+                style: AppTheme.sans(14, ink, weight: FontWeight.w600)),
+          ),
+          Text('+${_fmt.format(entry.amount)}원',
+              style: AppTheme.sans(14, _incomeColor, weight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _listExpenseRow(ExpenseItem exp, Color ink, Color sub, Color tert) {
+    final cat = expenseCategoryById(exp.category);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      child: Row(
+        children: [
+          Container(
+            width: 28, height: 28,
+            decoration: BoxDecoration(
+              color: cat.color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Icon(cat.icon, size: 15, color: cat.color),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(cat.label,
+                    style: AppTheme.sans(14, ink, weight: FontWeight.w600)),
+                Text(exp.paymentMethod,
+                    style: AppTheme.sans(12, tert)),
+              ],
+            ),
+          ),
+          Text('-${_fmt.format(exp.amount)}원',
+              style: AppTheme.sans(14, sub, weight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  // ── 분석 뷰 ──────────────────────────────────────────────────────
+
+  static const _taxDeductCats = {
+    '의료/건강': '의료비 세액공제 (15%)',
+    '교육':     '교육비 세액공제 (15%)',
+    '보험/금융': '보험료 세액공제 (12%)',
+  };
+
+  Widget _buildAnalysisView(Color ink, Color sub) {
+    final tert = AppTheme.inkTertiary(context);
+    final accent = AppTheme.accentColor(context);
+    final allExps = _expensesByDay.values.expand((l) => l).toSet().toList();
+    final totalExp = allExps.fold(0, (s, e) => s + e.amount);
+    final totalInc = _monthIncomeTotal;
+
+    // 전월 데이터
+    final prevMonth = _month == 1 ? 12 : _month - 1;
+    final prevYear  = _month == 1 ? _year - 1 : _year;
+    final prevExps  = _allExpenses
+        .where((e) => e.date.year == prevYear && e.date.month == prevMonth)
+        .toList();
+    final prevCatTotals = <String, int>{};
+    for (final e in prevExps) {
+      prevCatTotals[e.category] = (prevCatTotals[e.category] ?? 0) + e.amount;
+    }
+    final prevTotal = prevExps.fold(0, (s, e) => s + e.amount);
+
+    // 카테고리별
+    final catTotals = <String, int>{};
+    for (final e in allExps) {
+      catTotals[e.category] = (catTotals[e.category] ?? 0) + e.amount;
+    }
+    final sortedCats = catTotals.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    // 결제수단별
+    final pmTotals = <String, int>{'신용카드': 0, '체크+현금': 0, '기타': 0};
+    for (final e in allExps) {
+      if (e.paymentMethod == _catCredit)      pmTotals['신용카드'] = pmTotals['신용카드']! + e.amount;
+      else if (e.paymentMethod == _catDebit)  pmTotals['체크+현금'] = pmTotals['체크+현금']! + e.amount;
+      else                                    pmTotals['기타'] = pmTotals['기타']! + e.amount;
+    }
+
+    // 세금 공제 가능
+    final taxCatAmounts = <String, int>{};
+    for (final cat in _taxDeductCats.keys) {
+      final amt = catTotals[cat] ?? 0;
+      if (amt > 0) taxCatAmounts[cat] = amt;
+    }
+    final totalTaxDeduct = taxCatAmounts.values.fold(0, (s, v) => s + v);
+
+    final hasData = totalExp > 0;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+      children: [
+
+        // ── 이달 요약 ──────────────────────────────────────
+        Text('이달 요약'.toUpperCase(), style: AppTheme.label(context)),
+        const SizedBox(height: 12),
+        Row(children: [
+          _summaryCell('수입', totalInc, _incomeColor, ink, sub),
+          Container(width: 1, height: 44, color: AppTheme.line(context)),
+          _summaryCell('지출', totalExp, AppTheme.colorDanger, ink, sub),
+          Container(width: 1, height: 44, color: AppTheme.line(context)),
+          _summaryCell(
+            '잔액',
+            (totalInc - totalExp).abs(),
+            totalInc - totalExp >= 0 ? _incomeColor : AppTheme.colorDanger,
+            ink, sub,
+          ),
+        ]),
+        const SizedBox(height: 20),
+        AppTheme.hairline(context),
+
+        // ── D. 지출 목표 ──────────────────────────────────
+        const SizedBox(height: 20),
+        Text('지출 목표'.toUpperCase(), style: AppTheme.label(context)),
+        const SizedBox(height: 10),
+        if (_expenseTarget > 0)
+          _analysisSimpleBar(
+            label: '목표 ${_fmt.format(_expenseTarget)}원',
+            amount: totalExp,
+            max: _expenseTarget,
+            color: totalExp > _expenseTarget
+                ? AppTheme.colorDanger
+                : accent,
+            trailText: totalExp > _expenseTarget
+                ? '목표 ${_fmt.format(totalExp - _expenseTarget)}원 초과'
+                : '${_fmt.format(_expenseTarget - totalExp)}원 남음',
+            ink: ink, sub: sub,
+          )
+        else
+          Text('홈 화면에서 이달 지출 목표를 설정하면 달성률을 여기서 확인할 수 있어요.',
+              style: AppTheme.sans(13, tert, height: 1.5)),
+        const SizedBox(height: 20),
+        AppTheme.hairline(context),
+
+        // ── A. 결제수단별 ─────────────────────────────────
+        if (hasData) ...[
+          const SizedBox(height: 20),
+          Text('결제수단별'.toUpperCase(), style: AppTheme.label(context)),
+          const SizedBox(height: 10),
+          _analysisSimpleBar(
+            label: '신용카드',
+            amount: pmTotals['신용카드']!,
+            max: totalExp,
+            color: _pmCreditColor,
+            ink: ink, sub: sub,
+          ),
+          const SizedBox(height: 8),
+          _analysisSimpleBar(
+            label: '체크+현금',
+            amount: pmTotals['체크+현금']!,
+            max: totalExp,
+            color: _pmDebitColor,
+            ink: ink, sub: sub,
+          ),
+          const SizedBox(height: 8),
+          _analysisSimpleBar(
+            label: '기타',
+            amount: pmTotals['기타']!,
+            max: totalExp,
+            color: _pmOtherColor,
+            ink: ink, sub: sub,
+          ),
+          const SizedBox(height: 20),
+          AppTheme.hairline(context),
+        ],
+
+        // ── E. 세금 공제 가능 지출 ───────────────────────
+        const SizedBox(height: 20),
+        Row(children: [
+          Text('세금 공제 가능 지출'.toUpperCase(), style: AppTheme.label(context)),
+          const SizedBox(width: 8),
+          if (totalTaxDeduct > 0)
+            AppTheme.blueprintBadge(context, '${_fmt.format(totalTaxDeduct)}원'),
+        ]),
+        const SizedBox(height: 10),
+        if (totalTaxDeduct == 0)
+          Text('의료비·교육비·보험료를 입력하면 공제 예상액을 볼 수 있어요.',
+              style: AppTheme.sans(13, tert, height: 1.5))
+        else
+          for (final entry in taxCatAmounts.entries) ...[
+            _taxDeductRow(entry.key, entry.value, ink, sub),
+            const SizedBox(height: 6),
+          ],
+        const SizedBox(height: 20),
+        AppTheme.hairline(context),
+
+        // ── 카테고리별 ───────────────────────────────────
+        if (hasData) ...[
+          const SizedBox(height: 20),
+          Text('카테고리별'.toUpperCase(), style: AppTheme.label(context)),
+          const SizedBox(height: 14),
+          for (final entry in sortedCats) ...[
+            _analysisCatBar(entry.key, entry.value, totalExp, ink, sub),
+            const SizedBox(height: 14),
+          ],
+          AppTheme.hairline(context),
+        ],
+
+        // ── C. 전월 대비 ──────────────────────────────────
+        const SizedBox(height: 20),
+        Text('전월 대비'.toUpperCase(), style: AppTheme.label(context)),
+        const SizedBox(height: 10),
+        _prevMonthSection(catTotals, prevCatTotals, totalExp, prevTotal, ink, sub, tert),
+        const SizedBox(height: 8),
+
+      ],
+    );
+  }
+
+  Widget _summaryCell(String label, int amount, Color color, Color ink, Color sub) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: AppTheme.sans(11, sub, weight: FontWeight.w500, spacing: 0.3)),
+          const SizedBox(height: 2),
+          Text('${_fmt.format(amount)}원',
+              style: AppTheme.sans(13, color, weight: FontWeight.w700),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+        ]),
+      ),
+    );
+  }
+
+  Widget _analysisSimpleBar({
+    required String label,
+    required int amount,
+    required int max,
+    required Color color,
+    String? trailText,
+    required Color ink,
+    required Color sub,
+  }) {
+    final pct = max > 0 ? (amount / max).clamp(0.0, 1.0) : 0.0;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: Text(label, style: AppTheme.sans(13, ink, weight: FontWeight.w600))),
+        Text(trailText ?? '${_fmt.format(amount)}원  ${(pct * 100).round()}%',
+            style: AppTheme.sans(12, sub)),
+      ]),
+      const SizedBox(height: 5),
+      LayoutBuilder(builder: (ctx, c) => Stack(children: [
+        Container(height: 5, width: c.maxWidth,
+            decoration: BoxDecoration(color: AppTheme.line(context), borderRadius: BorderRadius.circular(2))),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 400), curve: Curves.easeOut,
+          height: 5, width: c.maxWidth * pct,
+          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+        ),
+      ])),
+    ]);
+  }
+
+  Widget _taxDeductRow(String catId, int amount, Color ink, Color sub) {
+    final cat = expenseCategoryById(catId);
+    final hint = _taxDeductCats[catId] ?? '';
+    return Row(children: [
+      Icon(cat.icon, size: 13, color: cat.color),
+      const SizedBox(width: 6),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(cat.label, style: AppTheme.sans(13, ink, weight: FontWeight.w600)),
+        Text(hint, style: AppTheme.sans(11, AppTheme.inkTertiary(context))),
+      ])),
+      Text('${_fmt.format(amount)}원', style: AppTheme.sans(13, sub, weight: FontWeight.w600)),
+    ]);
+  }
+
+  Widget _prevMonthSection(
+    Map<String, int> cur, Map<String, int> prev,
+    int curTotal, int prevTotal,
+    Color ink, Color sub, Color tert,
+  ) {
+    final diff = curTotal - prevTotal;
+    final noData = prevTotal == 0 && curTotal == 0;
+
+    if (noData) {
+      return Text('전월 데이터가 없어요.', style: AppTheme.sans(13, tert));
+    }
+
+    // 가장 많이 증가한 카테고리
+    String? topIncrCat;
+    int topIncrDiff = 0;
+    for (final cat in cur.keys) {
+      final d = (cur[cat] ?? 0) - (prev[cat] ?? 0);
+      if (d > topIncrDiff) { topIncrDiff = d; topIncrCat = cat; }
+    }
+
+    final overallColor = diff <= 0 ? _incomeColor : AppTheme.colorDanger;
+    final overallSign  = diff <= 0 ? '▼ ' : '▲ ';
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text('전체 지출 ', style: AppTheme.sans(13, sub)),
+        Text('$overallSign${_fmt.format(diff.abs())}원',
+            style: AppTheme.sans(13, overallColor, weight: FontWeight.w700)),
+        Text(prevTotal > 0
+            ? '  (${((diff.abs() / prevTotal) * 100).round()}%)'
+            : '',
+            style: AppTheme.sans(12, tert)),
+      ]),
+      if (topIncrCat != null) ...[
+        const SizedBox(height: 6),
+        Row(children: [
+          Icon(expenseCategoryById(topIncrCat).icon, size: 13,
+              color: expenseCategoryById(topIncrCat).color),
+          const SizedBox(width: 5),
+          Text('${expenseCategoryById(topIncrCat).label} 지출이 가장 많이 늘었어요 '
+              '(+${_fmt.format(topIncrDiff)}원)',
+              style: AppTheme.sans(12, sub, height: 1.4)),
+        ]),
+      ],
+    ]);
+  }
+
+  Widget _analysisCatBar(String catId, int amount, int total, Color ink, Color sub) {
+    final cat = expenseCategoryById(catId);
+    final pct = total > 0 ? amount / total : 0.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(cat.icon, size: 14, color: cat.color),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(cat.label,
+                  style: AppTheme.sans(13, ink, weight: FontWeight.w600)),
+            ),
+            Text('${_fmt.format(amount)}원',
+                style: AppTheme.sans(13, sub, weight: FontWeight.w600)),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 38,
+              child: Text('${(pct * 100).round()}%',
+                  style: AppTheme.sans(12, AppTheme.inkTertiary(context)),
+                  textAlign: TextAlign.right),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        LayoutBuilder(builder: (context, constraints) {
+          return Stack(children: [
+            Container(
+              height: 5,
+              width: constraints.maxWidth,
+              decoration: BoxDecoration(
+                color: AppTheme.line(context),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOut,
+              height: 5,
+              width: constraints.maxWidth * pct,
+              decoration: BoxDecoration(
+                color: cat.color,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ]);
+        }),
+      ],
+    );
+  }
+
+  // ── 연간 뷰 ──────────────────────────────────────────────────────
+
+  Widget _buildAnnualView(Color ink, Color sub) {
+    final monthExp = <int, int>{};
+    for (final e in _allExpenses) {
+      if (e.date.year == _year) {
+        monthExp[e.date.month] = (monthExp[e.date.month] ?? 0) + e.amount;
+      }
+    }
+
+    // 순수익 = 수입 - 지출 (월별)
+    final monthNet = <int, int>{};
+    for (int m = 1; m <= 12; m++) {
+      monthNet[m] = (_annualIncome[m] ?? 0) - (monthExp[m] ?? 0);
+    }
+    final maxAbs = monthNet.values.fold(0, (mx, v) => v.abs() > mx ? v.abs() : mx);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      children: [
+        Text('$_year년 순수익'.toUpperCase(), style: AppTheme.label(context)),
+        const SizedBox(height: 4),
+        Text('수입 − 지출', style: AppTheme.sans(12, AppTheme.inkTertiary(context))),
+        const SizedBox(height: 16),
+        for (int m = 1; m <= 12; m++) ...[
+          _annualMonthRow(m, monthNet[m] ?? 0, maxAbs, ink, sub),
+          const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+
+  Widget _annualMonthRow(int month, int net, int maxAbs, Color ink, Color sub) {
+    final isCurrent = month == _month;
+    final accent = AppTheme.accentColor(context);
+    final isPositive = net >= 0;
+    final barColor = isCurrent
+        ? accent
+        : isPositive
+            ? _incomeColor.withValues(alpha: 0.7)
+            : AppTheme.colorDanger.withValues(alpha: 0.7);
+    final labelColor = isCurrent ? accent : sub;
+    final netAbs = net.abs();
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _month = month;
+          _activeView = 0;
+          _selected.clear();
+          _clearForm();
+        });
+        _load();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 34,
+            child: Text('${month}월',
+                style: AppTheme.sans(13, labelColor,
+                    weight: isCurrent ? FontWeight.w800 : FontWeight.w500)),
+          ),
+          Expanded(
+            child: LayoutBuilder(builder: (context, constraints) {
+              final barW = maxAbs > 0
+                  ? (netAbs / maxAbs) * constraints.maxWidth
+                  : 0.0;
+              return Stack(alignment: Alignment.centerLeft, children: [
+                Container(
+                  height: 8,
+                  width: constraints.maxWidth,
+                  decoration: BoxDecoration(
+                    color: AppTheme.line(context),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                if (barW > 0)
+                  Container(
+                    height: 8,
+                    width: barW,
+                    decoration: BoxDecoration(
+                      color: barColor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+              ]);
+            }),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 96,
+            child: Text(
+              net == 0 ? '—' : '${isPositive ? '+' : '-'}${_fmt.format(netAbs)}원',
+              style: AppTheme.sans(12,
+                  net == 0
+                      ? AppTheme.inkTertiary(context)
+                      : isPositive ? _incomeColor : AppTheme.colorDanger,
+                  weight: FontWeight.w600),
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── 인라인 에디터 ─────────────────────────────────────────────────
 
   Widget _buildInlineEditor(Color ink, Color sub) {
@@ -752,14 +2280,23 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
     final title = isRange
         ? '${sorted.first.month}월 ${sorted.first.day}일 – ${sorted.last.month}월 ${sorted.last.day}일'
         : '${sorted.first.month}월 ${sorted.first.day}일 (${wd[sorted.first.weekday - 1]})';
-    final caption = isRange
-        ? '${sorted.length}일 기간 — 같은 금액으로 한 건 기록'
-        : '이 날의 수입과 지출을 입력하세요';
     final hasExisting = _selected.any((d) => _hasData(_key(d)));
+    final accent = AppTheme.accentColor(context);
+    final line = AppTheme.line(context);
+
+    Widget sectionEyebrow(IconData icon, String label, Color color) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 11, color: color),
+        const SizedBox(width: 4),
+        Text(label,
+            style: AppTheme.sans(11, color, weight: FontWeight.w700, spacing: 0.6)),
+      ],
+    );
 
     return Container(
       margin: const EdgeInsets.fromLTRB(2, 4, 2, 10),
-      padding: const EdgeInsets.fromLTRB(16, 13, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
         color: AppTheme.surface(context),
         border: Border.all(color: AppTheme.lineStrong(context), width: 1),
@@ -768,46 +2305,78 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 헤더
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Text(title,
-                    style: AppTheme.serif(17, ink, weight: FontWeight.w400, spacing: -0.3),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+          // ── 헤더 ───────────────────────────
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            Expanded(
+              child: Text(title,
+                  style: AppTheme.serif(17, ink, weight: FontWeight.w400, spacing: -0.3),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            GestureDetector(
+              onTap: _deselect,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 10),
+                child: Icon(Icons.close_rounded, size: 18, color: sub),
               ),
-              GestureDetector(
-                onTap: _deselect,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 10),
-                  child: Icon(Icons.close_rounded, size: 18, color: sub),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text(caption, style: AppTheme.sans(11.5, AppTheme.inkTertiary(context))),
-          const SizedBox(height: 14),
+            ),
+          ]),
+          const SizedBox(height: 16),
 
-          // 입력 필드 — 레이블 고정 너비(58px)로 정렬 일관성
-          _BlueprintAmountField(label: '수익',     ctrl: _incomeCtrl, color: _incomeColor, fmt: _fmt),
+          // ── 수익 ───────────────────────────
+          sectionEyebrow(Icons.arrow_upward_rounded, '수익', _incomeColor),
           const SizedBox(height: 8),
-          // 직장인은 급여만 기록 — 기타수익 토글 숨기고 종합과세 기준 안내.
+          _BlueprintAmountField(label: '', ctrl: _incomeCtrl, color: _incomeColor, fmt: _fmt),
+          const SizedBox(height: 8),
           if (_userType != '직장인')
             _incomeTypeToggle()
           else
             _employeeOtherIncomeNotice(),
-          const SizedBox(height: 10),
-          _BlueprintAmountField(label: '신용카드', ctrl: _creditCtrl, color: _creditColor, fmt: _fmt),
-          const SizedBox(height: 10),
-          _BlueprintAmountField(label: '체크/현금', ctrl: _debitCtrl,  color: _debitColor,  fmt: _fmt),
-          const SizedBox(height: 10),
-          _BlueprintAmountField(label: '기타',     ctrl: _otherCtrl,  color: _otherColor,  fmt: _fmt),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
 
-          // 버튼
+          // ── 지출 ───────────────────────────
+          sectionEyebrow(Icons.arrow_downward_rounded, '지출', accent),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: line, width: 1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Column(children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: _PaymentCategoryRow(
+                  label: '신용카드', ctrl: _creditCtrl, fmt: _fmt,
+                  category: _creditCategory,
+                  onCategoryChanged: (v) => setState(() => _creditCategory = v),
+                  showBottomBorder: false,
+                ),
+              ),
+              Divider(height: 1, thickness: 1, color: line),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: _PaymentCategoryRow(
+                  label: '체크/현금', ctrl: _debitCtrl, fmt: _fmt,
+                  category: _debitCategory,
+                  onCategoryChanged: (v) => setState(() => _debitCategory = v),
+                  showBottomBorder: false,
+                ),
+              ),
+              Divider(height: 1, thickness: 1, color: line),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: _PaymentCategoryRow(
+                  label: '기타', ctrl: _otherCtrl, fmt: _fmt,
+                  category: _otherCategory,
+                  onCategoryChanged: (v) => setState(() => _otherCategory = v),
+                  showBottomBorder: false,
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 16),
+
+          // ── 버튼 ───────────────────────────
           Row(children: [
             if (hasExisting) ...[
               GestureDetector(
@@ -819,7 +2388,8 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
                     border: Border.all(color: AppTheme.colorDanger, width: 1),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Text('삭제', style: AppTheme.sans(13, AppTheme.colorDanger, weight: FontWeight.w600)),
+                  child: Text('삭제',
+                      style: AppTheme.sans(13, AppTheme.colorDanger, weight: FontWeight.w600)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -836,7 +2406,8 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen> {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(hasExisting ? '수정' : '저장',
-                      style: AppTheme.sans(14, AppTheme.backgroundColor(context), weight: FontWeight.w700)),
+                      style: AppTheme.sans(14, AppTheme.backgroundColor(context),
+                          weight: FontWeight.w700)),
                 ),
               ),
             ),
@@ -901,18 +2472,178 @@ class _BlueprintAmountFieldState extends State<_BlueprintAmountField> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          if (widget.label.isNotEmpty)
+            SizedBox(
+              width: 58,
+              child: Text(widget.label,
+                  style: AppTheme.sans(13, labelColor, weight: FontWeight.w600)),
+            ),
+          if (widget.label.isNotEmpty)
+            Expanded(
+              flex: 2,
+              child: _amountField(context, ink),
+            )
+          else
+            Expanded(child: _amountField(context, ink)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            child: Text('원', style: AppTheme.sans(widget.label.isEmpty ? 13 : 12, sub)),
+          ),
+          if (widget.label.isNotEmpty) const Spacer(flex: 3),
+        ],
+      ),
+    );
+  }
+
+  Widget _amountField(BuildContext context, Color ink) {
+    final fs = widget.label.isEmpty ? 22.0 : 18.0;
+    return TextField(
+      controller: widget.ctrl,
+      focusNode: _focus,
+      keyboardType: TextInputType.number,
+      textAlign: TextAlign.right,
+      cursorColor: widget.color,
+      style: AppTheme.sans(fs, ink, weight: FontWeight.w700),
+      decoration: InputDecoration(
+        isDense: true,
+        contentPadding: EdgeInsets.zero,
+        border: InputBorder.none,
+        hintText: '0',
+        hintStyle: AppTheme.sans(fs, AppTheme.inkTertiary(context), weight: FontWeight.w300),
+      ),
+      onChanged: (v) {
+        final n = v.replaceAll(RegExp(r'[^0-9]'), '');
+        final f = n.isEmpty ? '' : widget.fmt.format(int.parse(n));
+        if (f != widget.ctrl.text) {
+          widget.ctrl.value = TextEditingValue(
+            text: f, selection: TextSelection.collapsed(offset: f.length));
+        }
+      },
+    );
+  }
+}
+
+// ── 결제수단별 금액 + 카테고리 compact 행 ────────────────────────────
+class _PaymentCategoryRow extends StatefulWidget {
+  final String label;
+  final TextEditingController ctrl;
+  final NumberFormat fmt;
+  final String category;
+  final ValueChanged<String> onCategoryChanged;
+  final bool showBottomBorder;
+
+  const _PaymentCategoryRow({
+    required this.label,
+    required this.ctrl,
+    required this.fmt,
+    required this.category,
+    required this.onCategoryChanged,
+    this.showBottomBorder = true,
+  });
+
+  @override
+  State<_PaymentCategoryRow> createState() => _PaymentCategoryRowState();
+}
+
+class _PaymentCategoryRowState extends State<_PaymentCategoryRow> {
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickCategory() async {
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final ink = AppTheme.ink(ctx);
+        final sub = AppTheme.inkSecondary(ctx);
+        final bg  = AppTheme.backgroundColor(ctx);
+        final line = AppTheme.line(ctx);
+        return AlertDialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: line),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          title: Text('${widget.label} 카테고리', style: AppTheme.serif(17, ink)),
+          content: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: kExpenseCategories.map((cat) {
+              final sel = widget.category == cat.id;
+              return GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(cat.id),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: sel ? cat.color.withValues(alpha: 0.15) : Colors.transparent,
+                    border: Border.all(
+                      color: sel ? cat.color : line,
+                      width: sel ? 1.4 : 1.0,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(cat.icon, size: 13, color: sel ? cat.color : sub),
+                    const SizedBox(width: 4),
+                    Text(cat.label,
+                        style: AppTheme.sans(12, sel ? ink : sub,
+                            weight: sel ? FontWeight.w700 : FontWeight.w500)),
+                  ]),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+    if (picked != null) widget.onCategoryChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = AppTheme.ink(context);
+    final sub = AppTheme.inkSecondary(context);
+    final cat = expenseCategoryById(widget.category);
+    final focused = _focus.hasFocus;
+    final isEmpty = widget.ctrl.text.isEmpty || widget.ctrl.text == '0';
+    final lineColor = focused ? cat.color : AppTheme.line(context);
+    final labelColor = focused ? cat.color : sub;
+
+    final innerRow = Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // 레이블
           SizedBox(
             width: 58,
             child: Text(widget.label,
                 style: AppTheme.sans(13, labelColor, weight: FontWeight.w600)),
           ),
+          // 금액 필드 — flex 3
           Expanded(
+            flex: 3,
             child: TextField(
               controller: widget.ctrl,
               focusNode: _focus,
               keyboardType: TextInputType.number,
               textAlign: TextAlign.right,
-              cursorColor: widget.color,
+              cursorColor: cat.color,
               style: AppTheme.sans(18, ink, weight: FontWeight.w700),
               decoration: InputDecoration(
                 isDense: true,
@@ -928,13 +2659,54 @@ class _BlueprintAmountFieldState extends State<_BlueprintAmountField> {
                   widget.ctrl.value = TextEditingValue(
                     text: f, selection: TextSelection.collapsed(offset: f.length));
                 }
+                if (mounted) setState(() {});
               },
             ),
           ),
-          const SizedBox(width: 6),
-          Text('원', style: AppTheme.sans(12, sub)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            child: Text('원', style: AppTheme.sans(12, sub)),
+          ),
+          // 카테고리 버튼 — flex 2
+          Expanded(
+            flex: 2,
+            child: GestureDetector(
+              onTap: _pickCategory,
+              behavior: HitTestBehavior.opaque,
+              child: Opacity(
+                opacity: isEmpty ? 0.35 : 1.0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isEmpty ? Colors.transparent : cat.color.withValues(alpha: 0.12),
+                    border: Border.all(
+                      color: isEmpty ? AppTheme.line(context) : cat.color.withValues(alpha: 0.5),
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(cat.icon, size: 13, color: isEmpty ? sub : cat.color),
+                    const SizedBox(width: 4),
+                    Text(cat.label,
+                        style: AppTheme.sans(12, isEmpty ? sub : cat.color,
+                            weight: FontWeight.w600)),
+                  ]),
+                ),
+              ),
+            ),
+          ),
         ],
+    );
+
+    if (!widget.showBottomBorder) return innerRow;
+
+    return Container(
+      padding: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: lineColor, width: focused ? 1.6 : 1.0)),
       ),
+      child: innerRow,
     );
   }
 }

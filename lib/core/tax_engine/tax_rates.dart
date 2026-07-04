@@ -65,11 +65,11 @@ class TaxRates {
   /// 프리랜서 원천징수 지방소득세율 (3.3% 중 지방세 0.3%)
   static const double freelancerLocalWithholdingRate = 0.003;
 
-  /// 국민연금 기준소득월액 상·하한 (2024.7~2025.6 적용).
+  /// 국민연금 기준소득월액 상·하한 (2025.7~2026.6 적용 — 단일 출처).
   /// 보험료는 이 범위로 클램프한 월소득에 부과된다. (국민연금법 시행령)
-  /// 세법유지보수: 매년 7월 고시값으로 갱신.
-  static const double nationalPensionBaseUpperLimit = 6170000.0;
-  static const double nationalPensionBaseLowerLimit = 390000.0;
+  /// 세법유지보수: 매년 7월 고시값으로 갱신. insurance_engine도 이 상수를 참조함.
+  static const double nationalPensionBaseUpperLimit = 6370000.0;
+  static const double nationalPensionBaseLowerLimit = 400000.0;
 
   /// 종합소득 과세표준에 따른 산출세액 연산 함수 (세전 금액 기준)
   static double calculateTax(double taxBase) {

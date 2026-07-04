@@ -22,6 +22,13 @@ class _InsurancePremiumScreenState extends State<InsurancePremiumScreen> {
   final TextEditingController _disabledController = TextEditingController();
   final _numberFormat = NumberFormat('#,###');
 
+  void _reset() {
+    setState(() {
+      _generalController.clear();
+      _disabledController.clear();
+    });
+  }
+
   @override
   void dispose() {
     _generalController.dispose();
@@ -63,6 +70,13 @@ class _InsurancePremiumScreenState extends State<InsurancePremiumScreen> {
         title: Text('보험료 세액공제 계산기',
             style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold)),
         iconTheme: IconThemeData(color: textColor),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh_rounded, size: 20, color: subColor),
+            tooltip: '초기화',
+            onPressed: _reset,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),

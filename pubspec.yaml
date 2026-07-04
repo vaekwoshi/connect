@@ -21,6 +21,7 @@ dependencies:
   # ① 연말정산 자료 파서 — PDF 텍스트 추출(순수 Dart) + 파일 선택
   syncfusion_flutter_pdf: ^28.1.33
   file_picker: ^8.1.6
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
@@ -31,21 +32,23 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/products.json
 
-# 앱 아이콘 — 블루프린트 톤(크림 #F8F7F5 + 잉크 세리프 '세끌').
+# 앱 아이콘 — 갈색 도장(낙관) '세끌', 따뜻한 종이 바탕 #F4EFE6.
 # 생성: dart run flutter_launcher_icons
 flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icon/icon.png"
-  adaptive_icon_background: "#F8F7F5"
+  adaptive_icon_background: "#F4EFE6"
   adaptive_icon_foreground: "assets/icon/icon_fg.png"
   remove_alpha_ios: true
 
 # 스플래시 — 동일 톤. 생성: dart run flutter_native_splash:create
 flutter_native_splash:
-  color: "#F8F7F5"
+  color: "#F4EFE6"
   image: "assets/icon/icon_fg.png"
   android_12:
-    color: "#F8F7F5"
+    color: "#F4EFE6"
     image: "assets/icon/icon_fg.png"

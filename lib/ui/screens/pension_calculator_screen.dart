@@ -22,6 +22,7 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
   final TextEditingController _savingsController = TextEditingController();
   final TextEditingController _irpController = TextEditingController();
   final _numberFormat = NumberFormat('#,###');
+  bool _isSalary = true; // 근로소득=true, 종합소득=false
 
   @override
   void initState() {
@@ -39,6 +40,15 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
         });
       }
     }
+  }
+
+  void _reset() {
+    setState(() {
+      _grossIncomeController.clear();
+      _savingsController.clear();
+      _irpController.clear();
+      _isSalary = true;
+    });
   }
 
   @override
@@ -72,12 +82,14 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
     final eligibleSavings = savings > 6000000.0 ? 6000000.0 : savings;
     double eligibleTotal = eligibleSavings + irp;
     if (eligibleTotal > 9000000.0) eligibleTotal = 9000000.0;
-    final rate = grossIncome <= 55000000.0 ? 0.15 : 0.12;
+    final threshold = _isSalary ? 55000000.0 : 45000000.0;
+    final rate = grossIncome <= threshold ? 0.165 : 0.132;
 
     final credit = EmployeeTaxCalculator.calculatePensionAccountTaxCredit(
       pensionSavingsPayment: savings,
       retirementPensionPayment: irp,
       grossIncome: grossIncome,
+      isSalariedIncome: _isSalary,
     );
 
     final hasInput = savings > 0 || irp > 0;
@@ -91,6 +103,13 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
         title: Text('연금저축·IRP 절세 계산기',
             style: TextStyle(color: textColor, fontSize: 16, fontWeight: FontWeight.bold)),
         iconTheme: IconThemeData(color: textColor),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh_rounded, size: 20, color: subColor),
+            tooltip: '초기화',
+            onPressed: _reset,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -104,14 +123,27 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
                 style: TextStyle(color: subColor, fontSize: 13, height: 1.5)),
             const SizedBox(height: 24),
 
+            // 소득 유형 토글
+            Row(
+              children: [
+                _typeChip('근로소득', true, primary, subColor),
+                const SizedBox(width: 8),
+                _typeChip('종합소득', false, primary, subColor),
+              ],
+            ),
+            const SizedBox(height: 16),
+
             // 입력 카드
             Container(
               padding: const EdgeInsets.all(20),
               decoration: AppTheme.getCardDecoration(context, borderRadius: 20),
               child: Column(
                 children: [
-                  _buildInputField('총급여(연봉)', _grossIncomeController,
-                      hint: '공제율 판정에 사용돼요'),
+                  _buildInputField(
+                    _isSalary ? '총급여(연봉)' : '종합소득금액',
+                    _grossIncomeController,
+                    hint: _isSalary ? '5,500만원 이하 16.5% / 초과 13.2%' : '4,500만원 이하 16.5% / 초과 13.2%',
+                  ),
                   const SizedBox(height: 20),
                   _buildInputField('연금저축 납입액', _savingsController,
                       hint: '연 600만원까지 공제'),
@@ -141,7 +173,7 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
                       style: TextStyle(color: primary, fontSize: 32, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 16),
                   if (hasInput) ...[
-                    _resultRow('적용 공제율', '${(rate * 100).toStringAsFixed(0)}%', subColor, textColor),
+                    _resultRow('적용 공제율', '${(rate * 100).toStringAsFixed(1)}% (지방세 포함)', subColor, textColor),
                     const SizedBox(height: 8),
                     _resultRow('공제대상 금액', _toManwon(eligibleTotal), subColor, textColor),
                     if (savings > 6000000.0) ...[
@@ -165,7 +197,7 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: subColor.withOpacity(0.08),
+                color: subColor.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Column(
@@ -178,7 +210,7 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
                   ]),
                   const SizedBox(height: 8),
                   Text(
-                    '• 총급여 5,500만원 이하는 공제율 15%, 초과는 12%입니다.\n'
+                    '• 근로소득 5,500만원, 종합소득 4,500만원 이하는 16.5%, 초과는 13.2%입니다 (지방소득세 포함).\n'
                     '• 연금저축은 연 600만원, IRP 포함 합산 900만원까지 공제 대상입니다.\n'
                     '• 세액공제는 결정세액에서 직접 차감되어 환급으로 돌아옵니다.',
                     style: TextStyle(color: subColor, fontSize: 12, height: 1.6),
@@ -188,6 +220,27 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _typeChip(String label, bool isSalary, Color primary, Color subColor) {
+    final selected = _isSalary == isSalary;
+    return GestureDetector(
+      onTap: () => setState(() => _isSalary = isSalary),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? primary.withValues(alpha: 0.12) : Colors.transparent,
+          border: Border.all(color: selected ? primary : subColor.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(label,
+            style: TextStyle(
+              color: selected ? primary : subColor,
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            )),
       ),
     );
   }
@@ -210,7 +263,7 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
         Text(label, style: TextStyle(color: subColor, fontSize: 14)),
         if (hint != null) ...[
           const SizedBox(height: 2),
-          Text(hint, style: TextStyle(color: subColor.withOpacity(0.7), fontSize: 11)),
+          Text(hint, style: TextStyle(color: subColor.withValues(alpha: 0.7), fontSize: 11)),
         ],
         const SizedBox(height: 4),
         AmountField(controller: controller, expand: true, onChanged: (_) => setState(() {})),

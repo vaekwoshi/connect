@@ -27,9 +27,14 @@ extension AppModeX on AppMode {
   bool get isLinked => this == AppMode.linked;
 }
 
-/// DB 문자열 → AppMode 복원 (미설정 시 기본값 = 제1모드 수동)
+/// 제2모드(연동)는 아직 목업 — 실제 데이터 수집·전송을 하지 않으므로 출시 전까지 잠근다.
+/// 켜서 사용자에게 "결제내역 자동 수집"을 광고하면 기만·데이터안전성 불일치가 되므로,
+/// 실제 연동 구현 + 개인정보처리방침 확장 전까지 false 유지.
+const bool kLinkedModeEnabled = false;
+
+/// DB 문자열 → AppMode 복원 (미설정·연동잠금 시 기본값 = 제1모드 수동)
 AppMode appModeFromDb(String? value) =>
-    value == 'linked' ? AppMode.linked : AppMode.manual;
+    (value == 'linked' && kLinkedModeEnabled) ? AppMode.linked : AppMode.manual;
 
 /// 앱 전역 모드 상태. 시작 시 DB에서 로드되고, 설정 변경 시 갱신된다.
 /// (main.dart의 themeNotifier와 동일한 패턴)

@@ -66,56 +66,73 @@ class _DataModeScreenState extends State<DataModeScreen> {
     final textColor = Theme.of(context).textTheme.bodyLarge!.color!;
     final subColor = Theme.of(context).textTheme.labelMedium!.color!;
     final primary = Theme.of(context).primaryColor;
-    final isSelected = _selected == mode;
+    // 제2모드(연동)는 아직 준비 중 — 선택 불가, 흐리게 표시.
+    final locked = mode == AppMode.linked && !kLinkedModeEnabled;
+    final isSelected = _selected == mode && !locked;
 
-    return GestureDetector(
-      onTap: () async {
-        setState(() => _selected = mode);
-        await _persist(mode);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${mode.emoji} ${mode.label} 모드로 전환했어요.'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: isSelected ? primary.withOpacity(0.12) : Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: isSelected ? primary : Colors.transparent, width: 2),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(mode.emoji, style: const TextStyle(fontSize: 26)),
-                const SizedBox(width: 10),
-                Text(mode.label, style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
-                const Spacer(),
-                if (isSelected) Icon(Icons.check_circle_rounded, color: primary, size: 24),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(mode.description, style: TextStyle(color: subColor, fontSize: 14, height: 1.5)),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Theme.of(context).dividerColor,
-                borderRadius: BorderRadius.circular(8),
+    return Opacity(
+      opacity: locked ? 0.55 : 1.0,
+      child: GestureDetector(
+        onTap: () async {
+          if (locked) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('자동 연동은 준비 중이에요. 곧 제공할게요.'),
+                behavior: SnackBarBehavior.floating,
               ),
-              child: Text(
-                mode.patentRef,
-                style: TextStyle(color: subColor, fontSize: 11, fontWeight: FontWeight.w600),
+            );
+            return;
+          }
+          setState(() => _selected = mode);
+          await _persist(mode);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${mode.emoji} ${mode.label} 모드로 전환했어요.'),
+                behavior: SnackBarBehavior.floating,
               ),
-            ),
-          ],
+            );
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: isSelected ? primary.withOpacity(0.12) : Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: isSelected ? primary : Colors.transparent, width: 2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(mode.emoji, style: const TextStyle(fontSize: 26)),
+                  const SizedBox(width: 10),
+                  Text(mode.label, style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  if (locked)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).dividerColor,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text('준비 중', style: TextStyle(color: subColor, fontSize: 12, fontWeight: FontWeight.w700)),
+                    )
+                  else if (isSelected)
+                    Icon(Icons.check_circle_rounded, color: primary, size: 24),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                locked
+                    ? '연동 계좌에서 결제 내역을 자동으로 불러오는 기능을 준비 중이에요.'
+                    : mode.description,
+                style: TextStyle(color: subColor, fontSize: 14, height: 1.5),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -20,7 +20,7 @@ class ReminderFormScreen extends StatefulWidget {
 class _ReminderFormScreenState extends State<ReminderFormScreen> {
   final _titleCtrl = TextEditingController();
   ReminderFrequency _freq = ReminderFrequency.monthly;
-  DateTime _onceDate = DateTime.now().add(const Duration(days: 1));
+  DateTime _onceDate = DateTime.now();
   int _weekday = DateTime.now().weekday; // 1=월…7=일
   int _monthDay = DateTime.now().day.clamp(1, 28);
   int _hour = 9;
@@ -105,8 +105,8 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(ctx).cardColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text('알림을 삭제할까요?', style: AppTheme.sans(16, AppTheme.ink(ctx), weight: FontWeight.w700)),
-        content: Text('이 알림과 예약된 알림이 함께 사라져요.', style: AppTheme.sans(13.5, AppTheme.inkSecondary(ctx), height: 1.45)),
+        title: Text('알림을 삭제할까요?', style: AppTheme.sans(15, AppTheme.ink(ctx), weight: FontWeight.w700)),
+        content: Text('이 알림과 예약된 알림이 함께 사라져요.', style: AppTheme.sans(14, AppTheme.inkSecondary(ctx), height: 1.45)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('취소', style: AppTheme.sans(14, AppTheme.inkSecondary(ctx)))),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('삭제', style: AppTheme.sans(14, AppTheme.colorDanger, weight: FontWeight.w700))),
@@ -139,7 +139,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
           if (_isEdit && widget.existing?.kind == 'custom')
             TextButton(
               onPressed: _confirmDelete,
-              child: Text('삭제', style: AppTheme.sans(13.5, AppTheme.colorDanger, weight: FontWeight.w700)),
+              child: Text('삭제', style: AppTheme.sans(14, AppTheme.colorDanger, weight: FontWeight.w700)),
             ),
         ],
       ),
@@ -227,7 +227,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(label,
-            style: AppTheme.sans(13.5, selected ? ink : sub, weight: selected ? FontWeight.w700 : FontWeight.w500)),
+            style: AppTheme.sans(14, selected ? ink : sub, weight: selected ? FontWeight.w700 : FontWeight.w500)),
       ),
     );
   }
@@ -247,7 +247,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
   }
 
   Widget _hint(String t) =>
-      Text(t, style: AppTheme.sans(12.5, AppTheme.inkTertiary(context), height: 1.45));
+      Text(t, style: AppTheme.sans(12, AppTheme.inkTertiary(context), height: 1.45));
 
   Widget _dateRow(Color ink, Color sub) {
     final accent = AppTheme.accentColor(context);
@@ -267,7 +267,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
           Text('${DateFormat('yyyy년 M월 d일').format(_onceDate)} (${kWeekdayLabels[(_onceDate.weekday - 1) % 7]})',
               style: AppTheme.sans(14, ink, weight: FontWeight.w600)),
           const Spacer(),
-          Text('변경', style: AppTheme.sans(12.5, sub, weight: FontWeight.w600)),
+          Text('변경', style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
         ]),
       ),
     );
@@ -337,7 +337,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(label,
-            style: AppTheme.sans(13.5, selected ? AppTheme.backgroundColor(context) : base,
+            style: AppTheme.sans(14, selected ? AppTheme.backgroundColor(context) : base,
                 weight: selected ? FontWeight.w700 : FontWeight.w500)),
       ),
     );
@@ -384,7 +384,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
                 Row(
                   children: [
                     Expanded(child: _drum(_hourCtrl, 24, itemExtent, (v) => _hour = v)),
-                    Text(':', style: AppTheme.serif(24, tert, height: 1.0)),
+                    Text(':', style: AppTheme.serif(22, tert, height: 1.0)),
                     Expanded(child: _drum(_minCtrl, 60, itemExtent, (v) => _minute = v)),
                   ],
                 ),
@@ -439,7 +439,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
               alignment: Alignment.center,
               decoration: BoxDecoration(color: AppTheme.ink(context), borderRadius: BorderRadius.circular(4)),
               child: Text(_isEdit ? '저장' : '알림 만들기',
-                  style: AppTheme.sans(15.5, bg, weight: FontWeight.w700)),
+                  style: AppTheme.sans(15, bg, weight: FontWeight.w700)),
             ),
           ),
         ),

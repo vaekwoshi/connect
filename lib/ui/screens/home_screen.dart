@@ -6,8 +6,6 @@ import 'package:intl/intl.dart';
 
 import '../theme/app_theme.dart';
 import '../components/reminder_card.dart';
-import '../../main.dart';
-
 import 'freelancer_book_screen.dart';
 import 'onboarding_screen.dart';
 import 'profile_input_screen.dart';
@@ -18,6 +16,11 @@ import 'financial_income_screen.dart';
 import 'expense_calendar_screen.dart';
 import 'tax_tools_screen.dart';
 import 'settings_screen.dart';
+import 'benefit_screen.dart';
+import 'products_screen.dart';
+import 'calculator_screen.dart';
+import 'all_screen.dart';
+import 'notification_inbox_screen.dart';
 import '../../core/data/tax_tips.dart';
 import '../../core/data/db_helper.dart';
 import '../../core/tax_engine/employee_tax.dart';
@@ -66,13 +69,16 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _notificationsEnabled = true; // 세금·가계부 알림 마스터 on/off (reminder_settings 'master'에 영속)
   bool _thresholdNotified = false; // 공제 문턱 도달 알림 중복 방지(세션 내)
   bool _thresholdNearNotified = false; // 공제 문턱 80% 임박 알림 중복 방지(세션 내)
-
-  // 세무 도구 — '빠르게 계산' 서랍(드롭다운) 펼침
-  bool _calcDrawerOpen = false;
+  bool _budgetNearNotified = false; // 지출 목표 80% 알림 중복 방지(세션 내)
+  bool _budgetOverNotified = false; // 지출 목표 초과 알림 중복 방지(세션 내)
+  int _unreadNotifCount = 0; // 알림함 안읽음 배지
 
   // 홈 인라인 연봉 입력
   bool _showSalaryInput = false;
   final TextEditingController _grossIncomeInlineCtrl = TextEditingController();
+
+  // 홈 세무 도구 아코디언 — 접힘 기본(리마인더 카드와 동일 패턴)
+  bool _taxToolsExpanded = false;
 
   // 홈 인라인 지출 목표 입력
   bool _showExpenseInput = false;
@@ -85,9 +91,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // 홈 상단 회전 배너 (광고·알림 카드) — 6초마다 페이드 전환, 유형별 카드 세트
   int _bannerIndex = 0;
   Timer? _bannerTimer;
-
-  // '이달의 절세' 카드 — 상단 배너와 동일 형식의 페이드 회전(별도 인덱스, 같은 타이머)
-  int _tipIndex = 0;
 
   @override
   void initState() {
@@ -109,12 +112,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _bannerTimer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted) return;
       final bn = _bannerCards().length;
-      final tn = _currentTips().length;
-      if (bn <= 1 && tn <= 1) return;
-      setState(() {
-        if (bn > 1) _bannerIndex = (_bannerIndex + 1) % bn;
-        if (tn > 1) _tipIndex = (_tipIndex + 1) % tn;
-      });
+      if (bn <= 1) return;
+      setState(() => _bannerIndex = (_bannerIndex + 1) % bn);
     });
   }
 
@@ -166,19 +165,28 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      // 핫 리로드 과도기 중 DB 필드 불일치 에러 방어
+      // 핫 리로드 과도기 중 DB 필드 불일치 방어 — 운영 중 지속 실패면 로그로 드러나게.
+      debugPrint('홈 프로필 로드 실패(기본값으로 진행): $e');
     }
 
     // 마스터 알림 토글 — reminder_settings 'master'(없으면 ON)에서 복원.
     try {
       final rs = await dbService.getReminderSettings();
       if (mounted) setState(() => _notificationsEnabled = rs['master'] ?? true);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('마스터 알림 설정 로드 실패: $e');
+    }
 
     await _loadMonthlyExpenses();
     await _loadCurrentMonthIncome();
     _calculateTax();
     _refreshReminders();
+    _refreshUnreadCount();
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    final count = await dbService.unreadNotificationCount();
+    if (mounted) setState(() => _unreadNotifCount = count);
   }
 
   /// 알림 켜짐 상태면 시즌·월간 리마인더를 (재)예약. 웹은 미지원.
@@ -254,7 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
           : eStart;
       // 이번 달과 겹치는 항목 포함
       if (!eEnd.isBefore(firstOfMonth) && !eStart.isAfter(lastOfMonth)) {
-        if (e.category == '신용카드') {
+        if (e.paymentMethod == '신용카드') {
           credit += e.amount;
         } else {
           debit += e.amount;
@@ -267,6 +275,29 @@ class _HomeScreenState extends State<HomeScreen> {
         _debitCashTotal = debit;
       });
       _checkCardThreshold();
+      _checkBudget();
+    }
+  }
+
+  /// 이번 달 지출 합계가 목표액의 80%·100%에 처음 닿으면 각각 1회 알림.
+  void _checkBudget() {
+    if (kIsWeb || !_notificationsEnabled || _expenseTarget <= 0) return;
+    final total = _creditCardTotal + _debitCashTotal;
+    if (total >= _expenseTarget) {
+      if (!_budgetOverNotified) {
+        _budgetOverNotified = true;
+        ReminderScheduler.showBudgetOver();
+      }
+    } else {
+      _budgetOverNotified = false;
+      if (total >= _expenseTarget * 0.8) {
+        if (!_budgetNearNotified) {
+          _budgetNearNotified = true;
+          ReminderScheduler.showBudgetNear();
+        }
+      } else {
+        _budgetNearNotified = false;
+      }
     }
   }
 
@@ -337,20 +368,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  /// 설정 풀스크린 진입 (구 설정 바텀시트 대체).
-  void _openSettings() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SettingsScreen(
-          notificationsEnabled: _notificationsEnabled,
-          onNotificationsChanged: _setNotificationsEnabled,
-          onDestroyData: _showDestroyConfirmDialog,
-        ),
-      ),
-    );
-  }
-
   void _showDestroyConfirmDialog() {
     showDialog(
       context: context,
@@ -410,7 +427,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _userType = type;
       _bannerIndex = 0;
-      _tipIndex = 0;
       _calculateTax();
     });
     _startBannerRotation();
@@ -433,45 +449,101 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: IndexedStack(
+        index: _currentIndex,
+        children: [
+          _buildHomeTab(),
+          BenefitScreen(userType: _userType),
+          ProductsScreen(userType: _userType),
+          const CalculatorScreen(),
+          AllScreen(
+            userType: _userType,
+            onProfileChanged: _loadDataFromDB,
+            onOpenSettings: _openSettings,
+          ),
+        ],
+      ),
+      bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+
+  Future<void> _openInbox() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotificationInboxScreen(onRead: _refreshUnreadCount),
+      ),
+    );
+    _refreshUnreadCount();
+  }
+
+  void _openSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SettingsScreen(
+          notificationsEnabled: _notificationsEnabled,
+          onNotificationsChanged: _setNotificationsEnabled,
+          onDestroyData: _showDestroyConfirmDialog,
+        ),
+      ),
+    );
+  }
+
+  /// 홈 탭 — 세끌 워드마크 + 설정 톱니 + 대시보드 본문.
+  Widget _buildHomeTab() {
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppTheme.ink(context), width: 1),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Text('세끌',
-                  style: AppTheme.serif(18, AppTheme.ink(context), weight: FontWeight.w400, spacing: -0.5)),
-            ),
-            const Spacer(),
-            ValueListenableBuilder<ThemeMode>(
-              valueListenable: themeNotifier,
-              builder: (context, currentMode, child) {
-                final isDark = currentMode == ThemeMode.dark;
-                return IconButton(
-                  icon: Icon(isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, color: AppTheme.inkSecondary(context), size: 24),
-                  onPressed: () {
-                    themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
-                  },
-                );
-              },
-            ),
-            IconButton(
-              icon: Icon(Icons.settings_rounded, color: AppTheme.inkSecondary(context), size: 24),
-              onPressed: _openSettings,
-            ),
-          ],
+        automaticallyImplyLeading: false,
+        titleSpacing: 16,
+        title: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppTheme.ink(context), width: 1),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Text('세끌',
+              style: AppTheme.serif(17, AppTheme.ink(context), weight: FontWeight.w400, spacing: -0.5)),
         ),
+        actions: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: Icon(Icons.notifications_none_rounded, color: AppTheme.inkSecondary(context), size: 22),
+                onPressed: _openInbox,
+                tooltip: '알림함',
+              ),
+              if (_unreadNotifCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: AppTheme.accentColor(context),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          IconButton(
+            icon: Icon(Icons.settings_outlined, color: AppTheme.inkSecondary(context), size: 22),
+            onPressed: _openSettings,
+            tooltip: '설정',
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: SafeArea(
         child: _buildHomeContent(),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
@@ -571,10 +643,10 @@ class _HomeScreenState extends State<HomeScreen> {
               if (monthlyIncome > 0)
                 Text(_toWon(monthlyIncome), style: AppTheme.serif(44, ink, spacing: -1.5, height: 1.0))
               else
-                Text('기록 없음', style: AppTheme.serif(30, tert, spacing: -0.5, height: 1.0)),
+                Text('기록 없음', style: AppTheme.serif(28, tert, spacing: -0.5, height: 1.0)),
               const SizedBox(height: 4),
               Text(_isEmployee ? '이번 달 수령액 (세전)' : '이번 달 수입 (세전)',
-                  style: AppTheme.sans(12.5, tert)),
+                  style: AppTheme.sans(12, tert)),
             ],
           ),
         ),
@@ -609,7 +681,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.call_split_rounded, size: 14, color: accent),
                 const SizedBox(width: 6),
-                Text('근로·기타로 나눠 기록하기', style: AppTheme.sans(12.5, accent, weight: FontWeight.w600)),
+                Text('근로·기타로 나눠 기록하기', style: AppTheme.sans(12, accent, weight: FontWeight.w600)),
               ]),
             ),
           ),
@@ -639,7 +711,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(mainAxisSize: MainAxisSize.min, children: [
               Text('예상 연봉(세후)', style: AppTheme.sans(13, sub)),
               const SizedBox(width: 6),
-              Text('4대보험·소득세 반영', style: AppTheme.sans(10.5, tert)),
+              Text('4대보험·소득세 반영', style: AppTheme.sans(11, tert)),
             ]),
             Text('약 ${_toWon(netEstimate * 12)}', style: AppTheme.sans(14, accent, weight: FontWeight.w700)),
           ]),
@@ -660,7 +732,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(_toWon(totalSpent),
                   style: AppTheme.serif(34, ink, weight: FontWeight.w700, spacing: -1.0, height: 1.0)),
               const SizedBox(height: 4),
-              Text('이번 달 지출', style: AppTheme.sans(12.5, tert)),
+              Text('이번 달 지출', style: AppTheme.sans(12, tert)),
             ],
           ),
         ),
@@ -804,7 +876,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 12),
           Expanded(child: Text(
             promptText,
-            style: AppTheme.sans(12.5, AppTheme.inkSecondary(context), weight: FontWeight.w500),
+            style: AppTheme.sans(12, AppTheme.inkSecondary(context), weight: FontWeight.w500),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           )),
@@ -832,7 +904,7 @@ class _HomeScreenState extends State<HomeScreen> {
               style: AppTheme.sans(14, ink, weight: FontWeight.w600),
               decoration: InputDecoration(
                 hintText: hintText,
-                hintStyle: AppTheme.sans(13.5, AppTheme.inkTertiary(context)),
+                hintStyle: AppTheme.sans(14, AppTheme.inkTertiary(context)),
                 suffixText: '원',
                 suffixStyle: AppTheme.sans(13, sub),
                 isDense: true,
@@ -858,7 +930,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               alignment: Alignment.center,
               decoration: BoxDecoration(color: ink, borderRadius: BorderRadius.circular(4)),
-              child: Text('적용', style: AppTheme.sans(13.5, AppTheme.backgroundColor(context), weight: FontWeight.w700)),
+              child: Text('적용', style: AppTheme.sans(14, AppTheme.backgroundColor(context), weight: FontWeight.w700)),
             ),
           ),
         ],
@@ -893,7 +965,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(label, style: AppTheme.sans(12.5, AppTheme.inkSecondary(context), weight: FontWeight.w500)),
+            Text(label, style: AppTheme.sans(12, AppTheme.inkSecondary(context), weight: FontWeight.w500)),
             if (onEdit != null) ...[
               const SizedBox(width: 6),
               GestureDetector(
@@ -906,7 +978,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ]),
-          Text(value, style: AppTheme.sans(12.5, color, weight: FontWeight.w700)),
+          Text(value, style: AppTheme.sans(12, color, weight: FontWeight.w700)),
         ]),
         const SizedBox(height: 8),
         LinearProgressIndicator(
@@ -925,98 +997,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 직장인/N잡러/프리랜서별 세무 도구 카드
   void _go(Widget screen) =>
       Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
-
-  /// 이달의 절세 — 이번 달·유형에 맞는 "득 되는 정보"(일정·2026 혜택·꿀팁).
-  /// 상단 배너와 동일한 형식으로 6초 페이드 회전. 팁 없으면 빈 위젯.
-  Widget _buildTaxTipsCard() {
-    final now = DateTime.now();
-    final tips = _currentTips();
-    if (tips.isEmpty) return const SizedBox.shrink();
-    final idx = _tipIndex % tips.length;
-    final reduce = MediaQuery.of(context).disableAnimations;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionLabel('이달의 절세 · ${now.month}월'),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 98,
-          child: AnimatedSwitcher(
-            duration: Duration(milliseconds: reduce ? 0 : 500),
-            switchInCurve: Curves.easeOut,
-            switchOutCurve: Curves.easeIn,
-            transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
-            child: KeyedSubtree(
-              key: ValueKey('tip$idx'),
-              child: _tipCardView(tips[idx]),
-            ),
-          ),
-        ),
-        if (tips.length > 1) ...[
-          const SizedBox(height: 10),
-          _tipTicks(tips.length, idx),
-        ],
-        const SizedBox(height: 14),
-        AppTheme.hairline(context),
-        const SizedBox(height: 14),
-      ],
-    );
-  }
-
-  /// 단일 절세 팁 카드 — 상단 배너 카드와 같은 레이아웃(라벨·세리프 헤드라인·글리프 박스).
-  /// action이 있으면 탭 가능(부연 줄에 화살표), 없으면 정보성.
-  Widget _tipCardView(TaxTip t) {
-    final ink = AppTheme.ink(context);
-    final sub = AppTheme.inkSecondary(context);
-    final glyph = _tipGlyph(t.label);
-    final tappable = t.action != null;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: tappable ? () => _tipNavigate(t.action!) : null,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(t.label.toUpperCase(), style: AppTheme.label(context)),
-                const SizedBox(height: 8),
-                Text(t.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTheme.serif(23, ink, spacing: -0.5, height: 1.2)),
-                const SizedBox(height: 6),
-                Row(children: [
-                  Flexible(
-                    child: Text(t.body,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTheme.sans(12.5, sub, height: 1.4)),
-                  ),
-                  if (tappable) ...[
-                    const SizedBox(width: 5),
-                    Icon(Icons.arrow_forward, size: 13, color: sub),
-                  ],
-                ]),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              border: Border.all(color: AppTheme.lineStrong(context), width: 1),
-              borderRadius: BorderRadius.circular(2),
-            ),
-            alignment: Alignment.center,
-            child: Text(glyph, style: AppTheme.serif(glyph.length > 1 ? 22 : 30, ink, spacing: 0, height: 1.0)),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// 절세 팁 액션 키 → 화면 이동.
   void _tipNavigate(String key) {
@@ -1059,314 +1039,80 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// 절세 팁 위치 틱 — 배너 틱과 동일 형식, 탭 시 해당 팁으로.
-  Widget _tipTicks(int count, int active) {
-    final ink = AppTheme.ink(context);
-    return Row(
-      children: List.generate(count, (i) {
-        final on = i == active;
-        return GestureDetector(
-          onTap: () {
-            setState(() => _tipIndex = i);
-            _startBannerRotation();
-          },
-          behavior: HitTestBehavior.opaque,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: on ? 18 : 10,
-              height: 2,
-              color: on ? ink : AppTheme.line(context),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  /// 세무 도구 카드 — 별도 메뉴 4행:
-  /// ① 기록하기(입력 토대) ② 종합소득세 신고 준비하기(핵심·강조 + 3단계 스테퍼)
-  /// ③ 경정청구 준비하기(직장인·N잡러) ④ 빠르게 계산.
-  Widget _buildTaxToolsCard() {
-    final record = taxRecordEntryFor(_userType);
-    final stages = taxPipelineFor(_userType);
-    final amended = taxAmendedEntryFor(_userType);
-    final quick = taxQuickCalcsFor(_userType);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionLabel(taxToolsLabel()),
-        const SizedBox(height: 4),
-        AppTheme.hairline(context),
-        // 행1 — 연말정산/사업소득 기록하기
-        _taxToolRow(
-          title: record.title,
-          subtitle: record.subtitle,
-          onTap: () => _go(record.build(_userType)),
-        ),
-        AppTheme.hairline(context),
-        // 행2 — 종합소득세 신고 준비하기 (핵심) + 3단계 스테퍼
-        if (stages.isNotEmpty) ...[
-          _taxToolRow(
-            title: '종합소득세 신고 준비하기',
-            subtitle: _flowSubtitle(),
-            badge: stages.last.badge,
-            onTap: () => _go(stages.first.build(_userType)),
-            emphasized: true,
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 17, bottom: 18),
-            child: _taxFlowStepper(),
-          ),
-        ],
-        AppTheme.hairline(context),
-        // 행3 — 경정청구 준비하기 (직장인·N잡러)
-        if (amended != null) ...[
-          _taxToolRow(
-            title: amended.title,
-            subtitle: amended.subtitle,
-            onTap: () => _go(amended.build(_userType)),
-          ),
-          AppTheme.hairline(context),
-        ],
-        // 행4 — 빠르게 계산
-        _quickCalcDrawer(quick),
-      ],
-    );
-  }
-
-  /// 종합소득세 신고 준비 진입점 서브타이틀 — 유형별 한 줄 요약.
-  String _flowSubtitle() => _userType == '직장인'
-      ? '연말정산 기록을 토대로 빠진 공제 찾아 5월 직접 신고'
-      : _userType == 'N잡러'
-          ? '근로+사업 합산으로 5월 종합소득세 신고'
-          : '사업소득 5월 종합소득세 신고';
-
-  /// 3단계 미니 스테퍼 — 신고 준비 흐름(진단 → 신고서 → 가이드)을
-  /// 카드에서 한눈에 보여준다. 1단계만 accent로 현재 시작점 표시.
-  Widget _taxFlowStepper() {
-    final ink = AppTheme.ink(context);
+  /// 홈 세무 도구 아코디언 — 리마인더 카드와 동일한 헤더(라벨 + 요약 + 회전 화살표).
+  /// 접힘 기본, 탭하면 세무 탭과 동일한 `TaxToolsMenu`를 펼친다.
+  Widget _buildTaxToolsAccordion() {
     final sub = AppTheme.inkSecondary(context);
     final tert = AppTheme.inkTertiary(context);
-    final accent = AppTheme.accentColor(context);
-    const labels = ['진단', '신고서', '가이드'];
-    return Row(
-      children: [
-        for (int i = 0; i < labels.length; i++) ...[
-          if (i > 0)
-            Expanded(
-              child: Container(
-                height: 1,
-                color: AppTheme.line(context),
-                margin: const EdgeInsets.symmetric(horizontal: 6),
-              ),
-            ),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 18,
-              height: 18,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: i == 0 ? accent : tert, width: 1.2),
-              ),
-              child: Text('${i + 1}',
-                  style: AppTheme.sans(10, i == 0 ? accent : sub, weight: FontWeight.w700)),
-            ),
-            const SizedBox(width: 5),
-            Text(labels[i],
-                style: AppTheme.sans(11.5, i == 0 ? ink : sub, weight: FontWeight.w600)),
-          ]),
-        ],
-      ],
-    );
-  }
-
-  /// '빠르게 계산' 공구 서랍 — 접힘 시 내용 미리보기, 펼치면 좌측 룰로 묶인
-  /// 계산기 목록(각 행 → 화면). FAQ 드롭다운과 같은 패턴.
-  Widget _quickCalcDrawer(List<TaxItem> quick) {
-    final ink = AppTheme.ink(context);
-    final sub = AppTheme.inkSecondary(context);
-    final tert = AppTheme.inkTertiary(context);
-    final accent = AppTheme.accentColor(context);
-    final preview = quick.map((c) => c.title.split(' ').first).join(' · ');
-
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         GestureDetector(
-          onTap: () => setState(() => _calcDrawerOpen = !_calcDrawerOpen),
           behavior: HitTestBehavior.opaque,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('빠르게 계산', style: AppTheme.sans(16, ink, weight: FontWeight.w700, spacing: -0.2)),
-                      const SizedBox(height: 5),
-                      Text(preview,
-                          style: AppTheme.sans(13, sub, height: 1.45),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
+          onTap: () => setState(() => _taxToolsExpanded = !_taxToolsExpanded),
+          child: Row(
+            children: [
+              Text('세무 도구', style: AppTheme.label(context)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '기록 · 신고 준비 · 경정청구 · 서식',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTheme.sans(12, sub, weight: FontWeight.w600),
+                  textAlign: TextAlign.right,
                 ),
-                const SizedBox(width: 8),
-                AnimatedRotation(
-                  turns: _calcDrawerOpen ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 220),
-                  child: Icon(Icons.expand_more_rounded, color: _calcDrawerOpen ? accent : tert, size: 22),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 6),
+              AnimatedRotation(
+                turns: _taxToolsExpanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                child: Icon(Icons.expand_more_rounded, size: 20, color: tert),
+              ),
+            ],
           ),
         ),
-        // 서랍 펼침 — 좌측 세로 룰이 도구들을 묶는다(서랍 모서리)
-        AnimatedSize(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          alignment: Alignment.topCenter,
-          child: _calcDrawerOpen
-              ? Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border(left: BorderSide(color: AppTheme.lineStrong(context), width: 1.4)),
-                    ),
-                    padding: const EdgeInsets.only(left: 16),
-                    child: Column(
-                      children: [
-                        for (int i = 0; i < quick.length; i++) ...[
-                          if (i > 0) AppTheme.hairline(context),
-                          _drawerCalcRow(quick[i]),
-                        ],
-                      ],
-                    ),
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
+        ClipRect(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: _taxToolsExpanded
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: TaxToolsMenu(userType: _userType),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
         ),
       ],
-    );
-  }
-
-  Widget _drawerCalcRow(TaxItem c) {
-    final ink = AppTheme.ink(context);
-    final sub = AppTheme.inkSecondary(context);
-    final tert = AppTheme.inkTertiary(context);
-    return GestureDetector(
-      onTap: () => _go(c.build(_userType)),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(c.title, style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
-                  const SizedBox(height: 3),
-                  Text(c.subtitle, style: AppTheme.sans(12.5, sub, height: 1.4)),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right_rounded, color: tert, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _taxToolRow({
-    required String title,
-    required String subtitle,
-    String? badge,
-    required VoidCallback onTap,
-    bool emphasized = false,
-    bool chevronOnly = false,
-  }) {
-    final ink = AppTheme.ink(context);
-    final sub = AppTheme.inkSecondary(context);
-    final tert = AppTheme.inkTertiary(context);
-    final accent = AppTheme.accentColor(context);
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (emphasized) ...[
-              Container(width: 3, height: 38, color: accent),
-              const SizedBox(width: 14),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Flexible(
-                      child: Text(title,
-                          style: AppTheme.sans(emphasized ? 17 : (chevronOnly ? 15 : 16), ink,
-                              weight: chevronOnly ? FontWeight.w600 : FontWeight.w700, spacing: -0.2)),
-                    ),
-                    if (badge != null) ...[
-                      const SizedBox(width: 8),
-                      AppTheme.blueprintBadge(context, badge),
-                    ],
-                  ]),
-                  if (!chevronOnly) ...[
-                    const SizedBox(height: 5),
-                    Text(subtitle, style: AppTheme.sans(13, sub, height: 1.45)),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right_rounded, color: tert, size: 20),
-          ],
-        ),
-      ),
     );
   }
 
   Widget _buildHomeContent() {
+    // 각 기능을 표면색 패널로 묶어 경계를 분명히 한다(헤어라인 나열 → 카드 구획).
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildTypeSelector(),
-          const SizedBox(height: 10),
-          AppTheme.hairline(context),
-          const SizedBox(height: 12),
-          _buildRotatingBanner(),
-          const SizedBox(height: 12),
-          AppTheme.hairline(context),
-          const SizedBox(height: 12),
-          _buildStatusSection(),
-          const SizedBox(height: 12),
-          AppTheme.hairline(context),
-          const SizedBox(height: 12),
-          // 지출 카드와 절세 카드 사이 — 사용자 맞춤 리마인더(핵심 기능).
-          ReminderCard(userType: _userType),
-          const SizedBox(height: 12),
-          AppTheme.hairline(context),
-          const SizedBox(height: 12),
-          _buildTaxTipsCard(),
-          _buildTaxToolsCard(),
-          const SizedBox(height: 12),
-          AppTheme.hairline(context),
-          const SizedBox(height: 8),
-          _buildFaqCard(),
+          const SizedBox(height: 16),
+          // 상단 회전 배너(광고/배너/알림 카드).
+          AppTheme.panel(context, child: _buildRotatingBanner()),
+          const SizedBox(height: 14),
+          // 이달 현황(수입·지출·공제 문턱).
+          AppTheme.panel(context, child: _buildStatusSection()),
+          const SizedBox(height: 14),
+          // 리마인더(핵심 기능) — 접이식.
+          AppTheme.panel(context, child: ReminderCard(userType: _userType)),
+          const SizedBox(height: 14),
+          // 세무 도구 — 접이식 아코디언(세무 탭과 동일 메뉴 공유).
+          AppTheme.panel(context, child: _buildTaxToolsAccordion()),
+          const SizedBox(height: 14),
+          // 자주 묻는 질문.
+          AppTheme.panel(context, child: _buildFaqCard()),
         ],
       ),
     );
@@ -1456,6 +1202,18 @@ class _HomeScreenState extends State<HomeScreen> {
   /// B: 유형 OK + 프로필 미완성 → [프로필 작성] + [유형 소개]
   /// C: 완료 + 소득 미설정 → [연봉 설정 촉구] + 유형별 도구 + 시즌
   /// D: 완료 + 소득 설정됨 → [개인화 데이터 카드] + 유형별 도구 + 시즌
+  /// 이달의 절세 팁 → 회전 배너 카드(맨 위 광고/배너 카드에 합침).
+  List<_BannerCard> _tipBannerCards() => _currentTips()
+      .map((t) => _BannerCard(
+            label: t.label,
+            headline: t.title,
+            action: '',
+            glyph: _tipGlyph(t.label),
+            sub: t.body,
+            onTap: t.action != null ? () => _tipNavigate(t.action!) : () {},
+          ))
+      .toList();
+
   List<_BannerCard> _bannerCards() {
     final s = _seasonalBanner();
 
@@ -1469,6 +1227,7 @@ class _HomeScreenState extends State<HomeScreen> {
           glyph: '유',
           onTap: _openOnboarding,
         ),
+        ..._tipBannerCards(),
       ];
     }
 
@@ -1495,6 +1254,7 @@ class _HomeScreenState extends State<HomeScreen> {
           glyph: typeGlyph,
           onTap: () => _go(TaxSimulatorScreen(userType: _userType)),
         ),
+        ..._tipBannerCards(),
       ];
     }
 
@@ -1568,6 +1328,9 @@ class _HomeScreenState extends State<HomeScreen> {
     cards.add(_BannerCard(
       label: s.label, headline: s.headline, action: s.action, glyph: s.glyph, onTap: _openPersona,
     ));
+
+    // 이달의 절세 팁을 상단 회전 배너에 합친다(별도 카드 제거).
+    cards.addAll(_tipBannerCards());
     return cards;
   }
 
@@ -1582,7 +1345,7 @@ class _HomeScreenState extends State<HomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          height: 84,
+          height: 104,
           child: AnimatedSwitcher(
             duration: Duration(milliseconds: reduce ? 0 : 500),
             switchInCurve: Curves.easeOut,
@@ -1602,24 +1365,50 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 단일 배너 카드 — 라벨 + 세리프 헤드라인 + 액션 + 글리프 박스.
-  /// 색상은 유형 무관 기본 ink/sub 사용 — accent 블루 없음.
+  /// 단일 배너 카드 — 라벨 + 세리프 헤드라인 + 보조 문구 + 우측 글리프 박스.
+  /// 카드 전체가 탭 영역. 색상은 유형 무관 기본 ink/sub.
   Widget _bannerCardView(_BannerCard c) {
     final ink = AppTheme.ink(context);
-    // 페이드 회전 카드 — 라벨 + 헤드라인만(액션 줄 제거). 카드 전체가 탭 영역.
-    // 가로 꽉 채워 좌측 정렬(AnimatedSwitcher의 가운데 정렬 방지).
+    final sub = AppTheme.inkSecondary(context);
+    // 보조 문구: 명시 sub(팁 본문) 우선, 없으면 액션 안내.
+    final subText = (c.sub != null && c.sub!.trim().isNotEmpty)
+        ? c.sub!
+        : (c.action.isNotEmpty ? c.action : null);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: c.onTap,
       child: SizedBox(
         width: double.infinity,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(c.label.toUpperCase(), style: AppTheme.label(context)),
-            const SizedBox(height: 8),
-            Text(c.headline, style: AppTheme.serif(24, ink, spacing: -0.5, height: 1.22)),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(c.label.toUpperCase(), style: AppTheme.label(context)),
+                  const SizedBox(height: 7),
+                  Text(c.headline,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTheme.serif(22, ink, spacing: -0.5, height: 1.2)),
+                  if (subText != null) ...[
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Flexible(
+                        child: Text(subText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTheme.sans(12, sub, height: 1.4)),
+                      ),
+                      const SizedBox(width: 5),
+                      Icon(Icons.arrow_forward, size: 13, color: sub),
+                    ]),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -1671,7 +1460,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(type, style: AppTheme.sans(16, selected ? ink : tert, weight: selected ? FontWeight.w700 : FontWeight.w500, spacing: -0.2)),
+                  Text(type, style: AppTheme.sans(15, selected ? ink : tert, weight: selected ? FontWeight.w700 : FontWeight.w500, spacing: -0.2)),
                   const SizedBox(height: 6),
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
@@ -1741,7 +1530,7 @@ class _HomeScreenState extends State<HomeScreen> {
         collapsedIconColor: AppTheme.inkTertiary(context),
         tilePadding: EdgeInsets.zero,
         childrenPadding: const EdgeInsets.only(bottom: 16),
-        title: Text('자주 묻는 질문', style: AppTheme.sans(15, AppTheme.ink(context), weight: FontWeight.w700, spacing: -0.2)),
+        title: Text('자주 묻는 질문', style: AppTheme.sans(13, AppTheme.ink(context), weight: FontWeight.w700, spacing: -0.2)),
         children: faqs.map((faq) => _buildFaqItem(faq['q']!, faq['a']!)).toList(),
       ),
     );
@@ -1755,7 +1544,7 @@ class _HomeScreenState extends State<HomeScreen> {
         childrenPadding: const EdgeInsets.only(bottom: 14),
         iconColor: AppTheme.inkTertiary(context),
         collapsedIconColor: AppTheme.inkTertiary(context),
-        title: Text('Q. $question', style: AppTheme.sans(13, AppTheme.ink(context), weight: FontWeight.w600, height: 1.4)),
+        title: Text('Q. $question', style: AppTheme.sans(12, AppTheme.ink(context), weight: FontWeight.w600, height: 1.4)),
         children: [
           Container(
             width: double.infinity,
@@ -1763,40 +1552,18 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: BoxDecoration(
               border: Border(left: BorderSide(color: AppTheme.accentColor(context), width: 2)),
             ),
-            child: Text(answer, style: AppTheme.sans(13, AppTheme.inkSecondary(context), height: 1.55)),
+            child: Text(answer, style: AppTheme.sans(12, AppTheme.inkSecondary(context), height: 1.55)),
           ),
         ],
       ),
     );
   }
 
-  /// 하단 탭 라우팅 — 홈은 베이스, 나머지는 해당 화면으로 진입 후 복귀 시 동기화.
-  Future<void> _onNavTap(int index) async {
-    if (index == 0) {
-      setState(() => _currentIndex = 0);
-      return;
-    }
-    switch (index) {
-      case 1: // 소득
-        await Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const ExpenseCalendarScreen(initialFocus: 'income')));
-        break;
-      case 2: // 지출
-        await Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const ExpenseCalendarScreen(initialFocus: 'expense')));
-        break;
-      case 3: // 세무
-        await Navigator.push(context, MaterialPageRoute(
-            builder: (_) => TaxToolsScreen(userType: _userType)));
-        break;
-      case 4: // 내정보
-        final result = await Navigator.push(context, MaterialPageRoute(
-            builder: (_) => ProfileInputScreen(userType: _userType)));
-        if (result == true && mounted) setState(() => _isProfileCompleted = true);
-        break;
-    }
-    // 가계부·프로필에서 돌아오면 홈 데이터 재동기화
-    await _loadDataFromDB();
+  /// 하단 탭 전환 — IndexedStack 인덱스만 바꾼다.
+  /// 홈으로 돌아올 땐 다른 탭(내정보·가계부)에서 바뀐 값을 다시 읽는다.
+  void _onNavTap(int index) {
+    setState(() => _currentIndex = index);
+    if (index == 0) _loadDataFromDB();
   }
 
   Widget _buildBottomNavigationBar() {
@@ -1815,10 +1582,10 @@ class _HomeScreenState extends State<HomeScreen> {
         unselectedFontSize: 10,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.square_outlined, size: 20), label: '홈'),
-          BottomNavigationBarItem(icon: Icon(Icons.north_east_rounded, size: 20), label: '소득'),
-          BottomNavigationBarItem(icon: Icon(Icons.south_east_rounded, size: 20), label: '지출'),
-          BottomNavigationBarItem(icon: Icon(Icons.change_history_outlined, size: 20), label: '세무'),
-          BottomNavigationBarItem(icon: Icon(Icons.circle_outlined, size: 20), label: '내정보'),
+          BottomNavigationBarItem(icon: Icon(Icons.analytics_outlined, size: 20), label: '혜택'),
+          BottomNavigationBarItem(icon: Icon(Icons.credit_card_outlined, size: 20), label: '상품'),
+          BottomNavigationBarItem(icon: Icon(Icons.calculate_outlined, size: 20), label: '계산기'),
+          BottomNavigationBarItem(icon: Icon(Icons.apps_rounded, size: 20), label: '전체'),
         ],
       ),
     );
@@ -1833,12 +1600,16 @@ class _BannerCard {
   final String glyph;
   final VoidCallback onTap;
 
+  /// 보조 문구 — 헤드라인 아래 한 줄(팁=본문, 그 외=액션 안내). 없으면 action 사용.
+  final String? sub;
+
   const _BannerCard({
     required this.label,
     required this.headline,
     required this.action,
     required this.glyph,
     required this.onTap,
+    this.sub,
   });
 
   /// 닫기 영구 저장용 안정 키 — 라벨+헤드라인 기반.

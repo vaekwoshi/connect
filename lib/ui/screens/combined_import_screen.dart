@@ -100,6 +100,7 @@ class _CombinedImportScreenState extends State<CombinedImportScreen> {
         _busy = false;
       });
     } catch (e) {
+      debugPrint('합산 PDF 파싱 실패: $e');
       setState(() {
         _busy = false;
         _error = 'PDF를 분석하지 못했어요. 홈택스에서 받은 PDF가 맞는지 확인해 주세요.';
@@ -158,7 +159,7 @@ class _CombinedImportScreenState extends State<CombinedImportScreen> {
             Text(_manualMode
                 ? '근로 총급여와 사업 총수입·업종을 적으면 경비율로 소득금액을 잡아 합산 종합소득세를 계산해요. 모두 기기 안에서만 분석돼요.'
                 : '근로 원천징수영수증과 사업소득 지급명세서로 5월 합산 종합소득세를 계산해요. 기기 안에서만 분석돼요.',
-                style: AppTheme.sans(13.5, sub, height: 1.55)),
+                style: AppTheme.sans(14, sub, height: 1.55)),
             const SizedBox(height: 20),
 
             _modeToggle(),
@@ -269,7 +270,7 @@ class _CombinedImportScreenState extends State<CombinedImportScreen> {
         const SizedBox(height: 22),
         Text('사업소득'.toUpperCase(), style: AppTheme.label(context)),
         const SizedBox(height: 6),
-        Text('업종을 고르면 경비율로 소득금액을 자동 계산해요.', style: AppTheme.sans(12.5, sub, height: 1.45)),
+        Text('업종을 고르면 경비율로 소득금액을 자동 계산해요.', style: AppTheme.sans(12, sub, height: 1.45)),
         const SizedBox(height: 10),
         GestureDetector(
           onTap: () async {
@@ -319,13 +320,13 @@ class _CombinedImportScreenState extends State<CombinedImportScreen> {
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: AppTheme.sans(15.5, ink, weight: FontWeight.w700, spacing: -0.2)),
+              Text(label, style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
               const SizedBox(height: 3),
-              Text(summary ?? hint, style: AppTheme.sans(12.5, done ? accent : sub, height: 1.4)),
+              Text(summary ?? hint, style: AppTheme.sans(12, done ? accent : sub, height: 1.4)),
             ]),
           ),
           const SizedBox(width: 8),
-          Text(done ? '다시' : 'PDF 선택', style: AppTheme.sans(12.5, tert, weight: FontWeight.w600)),
+          Text(done ? '다시' : 'PDF 선택', style: AppTheme.sans(12, tert, weight: FontWeight.w600)),
         ]),
       ),
     );
@@ -349,7 +350,7 @@ class _CombinedImportScreenState extends State<CombinedImportScreen> {
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppTheme.line(context)))),
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(children: [
-        Expanded(child: Text(label, style: AppTheme.sans(13.5, AppTheme.ink(context)))),
+        Expanded(child: Text(label, style: AppTheme.sans(14, AppTheme.ink(context)))),
         _numField(key),
       ]),
     );
@@ -384,7 +385,7 @@ class _CombinedImportScreenState extends State<CombinedImportScreen> {
           Text('원', style: AppTheme.sans(15, sub, weight: FontWeight.w600)),
         ]),
         const SizedBox(height: 6),
-        Text('근로 + 사업을 합산하면 세율 구간이 올라갈 수 있어요. 추정치예요.', style: AppTheme.sans(12.5, sub, height: 1.45)),
+        Text('근로 + 사업을 합산하면 세율 구간이 올라갈 수 있어요. 추정치예요.', style: AppTheme.sans(12, sub, height: 1.45)),
       ]),
     );
   }
@@ -399,7 +400,7 @@ class _CombinedImportScreenState extends State<CombinedImportScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(color: AppTheme.ink(context), borderRadius: BorderRadius.circular(4)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text('합산 신고서로 저장', style: AppTheme.sans(15.5, bg, weight: FontWeight.w700)),
+          Text('합산 신고서로 저장', style: AppTheme.sans(15, bg, weight: FontWeight.w700)),
           const SizedBox(width: 8),
           Icon(Icons.arrow_forward, size: 16, color: bg),
         ]),

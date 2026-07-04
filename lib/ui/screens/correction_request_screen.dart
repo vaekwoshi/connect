@@ -107,7 +107,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
             Text('놓친 공제\n되돌려받기', style: AppTheme.serif(28, ink, spacing: -0.5, height: 1.2)),
             const SizedBox(height: 10),
             Text('연말정산 때 깜빡한 공제를 고르기만 하면, 5년 내 경정청구로 얼마를 돌려받을 수 있는지 계산하고 홈택스 신고 방법까지 알려드려요.',
-                style: AppTheme.sans(13.5, sub, height: 1.55)),
+                style: AppTheme.sans(14, sub, height: 1.55)),
 
             // ── 대상 연도 ──
             const SizedBox(height: 22),
@@ -129,7 +129,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
             const SizedBox(height: 26),
             Text('어떤 공제를 빠뜨렸나요?'.toUpperCase(), style: AppTheme.label(context)),
             const SizedBox(height: 6),
-            Text('해당하는 항목을 고르고 실제 지출액을 적어주세요.', style: AppTheme.sans(12.5, sub)),
+            Text('해당하는 항목을 고르고 실제 지출액을 적어주세요.', style: AppTheme.sans(12, sub)),
             const SizedBox(height: 14),
             DeductionChecklist(
               initialAmounts: _initialAmounts,
@@ -184,7 +184,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text('$y',
-                    style: AppTheme.sans(13.5, _selectedYear == y ? ink : sub,
+                    style: AppTheme.sans(14, _selectedYear == y ? ink : sub,
                         weight: _selectedYear == y ? FontWeight.w700 : FontWeight.w500)),
               ),
             ),
@@ -208,7 +208,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
         Icon(Icons.checklist_rounded, size: 20, color: AppTheme.inkTertiary(context)),
         const SizedBox(width: 12),
         Expanded(child: Text('위에서 빠뜨린 공제를 골라보세요. 돌려받을 금액을 계산해드려요.',
-            style: AppTheme.sans(13.5, AppTheme.ink(context), weight: FontWeight.w600, height: 1.4))),
+            style: AppTheme.sans(14, AppTheme.ink(context), weight: FontWeight.w600, height: 1.4))),
       ]),
     );
   }
@@ -230,7 +230,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
             Text('원', style: AppTheme.sans(15, sub, weight: FontWeight.w600)),
           ]),
           const SizedBox(height: 6),
-          Text('$_selectedYear년 귀속 — 5년 내 경정청구로 돌려받을 수 있어요.', style: AppTheme.sans(12.5, sub, height: 1.45)),
+          Text('$_selectedYear년 귀속 — 5년 내 경정청구로 돌려받을 수 있어요.', style: AppTheme.sans(12, sub, height: 1.45)),
         ],
       ),
     );
@@ -298,7 +298,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('고른 항목, 어디에 입력하나요?', style: AppTheme.sans(13.5, ink, weight: FontWeight.w700)),
+                Text('고른 항목, 어디에 입력하나요?', style: AppTheme.sans(14, ink, weight: FontWeight.w700)),
                 const SizedBox(height: 10),
                 for (final cat in selectedCats) ...[
                   Padding(
@@ -308,7 +308,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
                       children: [
                         SizedBox(width: 72, child: Text(cat.name, style: AppTheme.sans(13, ink, weight: FontWeight.w600))),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(cat.fileHint, style: AppTheme.sans(12.5, sub, height: 1.45))),
+                        Expanded(child: Text(cat.fileHint, style: AppTheme.sans(12, sub, height: 1.45))),
                       ],
                     ),
                   ),
@@ -335,7 +335,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
             border: Border.all(color: AppTheme.lineStrong(context), width: 1),
             borderRadius: BorderRadius.circular(2),
           ),
-          child: Text('$n', style: AppTheme.serif(14, ink, weight: FontWeight.w700, height: 1.0)),
+          child: Text('$n', style: AppTheme.sans(14, ink, weight: FontWeight.w700, height: 1.0)),
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -344,7 +344,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
             children: [
               Text(title, style: AppTheme.sans(14, ink, weight: FontWeight.w700)),
               const SizedBox(height: 3),
-              Text(body, style: AppTheme.sans(12.5, sub, height: 1.5)),
+              Text(body, style: AppTheme.sans(12, sub, height: 1.5)),
             ],
           ),
         ),
@@ -362,7 +362,7 @@ class _CorrectionRequestScreenState extends State<CorrectionRequestScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(color: AppTheme.ink(context), borderRadius: BorderRadius.circular(4)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text('경정청구서로 저장', style: AppTheme.sans(15.5, bg, weight: FontWeight.w700)),
+          Text('경정청구서로 저장', style: AppTheme.sans(15, bg, weight: FontWeight.w700)),
           const SizedBox(width: 8),
           Icon(Icons.arrow_forward, size: 16, color: bg),
         ]),

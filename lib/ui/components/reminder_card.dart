@@ -29,7 +29,7 @@ class _Upcoming {
 class _ReminderCardState extends State<ReminderCard> {
   List<Reminder> _reminders = [];
   Map<String, bool> _sysSettings = {};
-  bool _expanded = false;
+  bool _expanded = true;
   bool _loading = true;
 
   @override
@@ -62,14 +62,15 @@ class _ReminderCardState extends State<ReminderCard> {
   /// 사용자 + 시스템(기한) 알림을 합쳐 가장 가까운 다음 한 건.
   _Upcoming? get _next {
     final cands = <_Upcoming>[];
-    // 사용자 알림
+    // 사용자 알림 (만료된 단발 알림 제외)
+    final now = DateTime.now();
     for (final r in _reminders.where((r) => r.enabled)) {
       final when = CustomReminderService.nextInstance(r);
+      if (r.frequency == ReminderFrequency.once && !when.isAfter(now)) continue;
       final label = r.frequency == ReminderFrequency.once ? _ddayFor(when) : r.frequency.label;
       cands.add(_Upcoming(when, r.title, label));
     }
     // 시스템 기한 알림 (없으면 ON)
-    final now = DateTime.now();
     for (final s in systemRemindersFor(widget.userType)) {
       if (s.isEvent) continue;
       if (_sysSettings[s.key] == false) continue;
@@ -110,43 +111,39 @@ class _ReminderCardState extends State<ReminderCard> {
     final sub = AppTheme.inkSecondary(context);
     final tert = AppTheme.inkTertiary(context);
     final accent = AppTheme.accentColor(context);
-    final next = _next;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── 헤더 (탭하면 펼침/접힘) ──
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Row(
-            children: [
-              Text('리마인더', style: AppTheme.label(context)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _loading
-                      ? ''
-                      : next == null
-                          ? '예정된 알림이 없어요'
-                          : '${next.label} · ${next.title}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTheme.sans(12.5, next == null ? tert : sub,
-                      weight: FontWeight.w600),
-                  textAlign: TextAlign.right,
+        // ── 헤더: 라벨+화살표(접힘) / 추가·관리 링크(우상단) ──
+        Row(
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('리마인더', style: AppTheme.label(context)),
+                const SizedBox(width: 6),
+                AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(Icons.expand_more_rounded, size: 20, color: tert),
                 ),
-              ),
-              const SizedBox(width: 6),
-              // 화살표도 부드럽게 회전.
-              AnimatedRotation(
-                turns: _expanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                child: Icon(Icons.expand_more_rounded, size: 20, color: tert),
-              ),
-            ],
-          ),
+              ]),
+            ),
+            const Spacer(),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _openManager,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.add_rounded, size: 16, color: accent),
+                const SizedBox(width: 4),
+                Text(_reminders.isEmpty ? '알림 추가' : '리마인더 관리',
+                    style: AppTheme.sans(13, accent, weight: FontWeight.w600)),
+              ]),
+            ),
+          ],
         ),
         // ── 펼침 영역 — AnimatedSize로 높이 전환 ──
         ClipRect(
@@ -174,22 +171,6 @@ class _ReminderCardState extends State<ReminderCard> {
                 style: AppTheme.sans(12.5, tert, height: 1.5))
           else
             ..._reminders.take(3).map((r) => _reminderRow(r, ink, sub, tert, accent)),
-          const SizedBox(height: 12),
-          // 전용 관리 화면 진입 (추가·수정·전체 목록).
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _openManager,
-            child: Row(
-              children: [
-                Icon(Icons.add_rounded, size: 16, color: accent),
-                const SizedBox(width: 6),
-                Text(_reminders.isEmpty ? '알림 만들기' : '리마인더 관리',
-                    style: AppTheme.sans(13, accent, weight: FontWeight.w600)),
-                const Spacer(),
-                Icon(Icons.chevron_right_rounded, size: 18, color: tert),
-              ],
-            ),
-          ),
         ],
       ),
     );

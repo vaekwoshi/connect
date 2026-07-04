@@ -170,7 +170,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
     final expenses = await dbService.getExpenses();
     double creditTotal = 0.0;
     for (final e in expenses) {
-      if (e.date.year == now.year && e.category == '신용카드') {
+      if (e.date.year == now.year && e.paymentMethod == '신용카드') {
         creditTotal += e.amount;
       }
     }
@@ -467,7 +467,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
         title: Text('🏠 월세 세액공제 꿀팁', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontWeight: FontWeight.bold)),
         content: Text(
           '새 계약서가 없어도 계좌이체 내역과 주민등록등본만 있으면 5월 종합소득세 때 최대 17%까지 똑같이 돌려받을 수 있어요!\n\n걱정 말고 매월 내는 월세 금액을 적어주세요.',
-          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, height: 1.5),
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, height: 1.5),
         ),
         actions: [
           TextButton(
@@ -594,13 +594,13 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
           child: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
-            style: AppTheme.sans(16, ink, weight: FontWeight.w700),
+            style: AppTheme.sans(15, ink, weight: FontWeight.w700),
             decoration: InputDecoration(
               isDense: true,
               contentPadding: EdgeInsets.zero,
               border: InputBorder.none,
               hintText: '0',
-              hintStyle: AppTheme.sans(16, AppTheme.inkTertiary(context), weight: FontWeight.w300),
+              hintStyle: AppTheme.sans(15, AppTheme.inkTertiary(context), weight: FontWeight.w300),
             ),
           ),
         ),
@@ -622,7 +622,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
             controller: controller,
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
-            style: AppTheme.sans(16, ink, weight: FontWeight.w700),
+            style: AppTheme.sans(15, ink, weight: FontWeight.w700),
             decoration: const InputDecoration(
               isDense: true,
               contentPadding: EdgeInsets.zero,
@@ -677,7 +677,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(statusText, style: AppTheme.sans(14.5, AppTheme.ink(context), weight: FontWeight.w700, spacing: -0.2)),
+                Text(statusText, style: AppTheme.sans(14, AppTheme.ink(context), weight: FontWeight.w700, spacing: -0.2)),
                 const SizedBox(height: 6),
                 Text(cardResult.guideMessage, style: AppTheme.sans(13, AppTheme.inkSecondary(context), height: 1.45)),
               ],
@@ -777,7 +777,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('5월 종합소득세 추가 환급 예상', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.bold)),
+          Text('5월 종합소득세 추가 환급 예상', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           if (rentCredit > 0)
             _buildCreditRow('월세 세액공제', rentCredit),
@@ -944,7 +944,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                   style: AppTheme.serif(28, AppTheme.ink(context), spacing: -0.5, height: 1.2)),
               const SizedBox(height: 10),
               Text('소득과 공제를 입력하면 5월 종합소득세로 돌려받을 금액을 계산해드려요.',
-                  style: AppTheme.sans(13.5, AppTheme.inkSecondary(context), height: 1.55)),
+                  style: AppTheme.sans(14, AppTheme.inkSecondary(context), height: 1.55)),
               const SizedBox(height: 34),
 
               if (_isEmployee) ...[
@@ -1005,9 +1005,9 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('민감항목 추가 공제 신청', style: AppTheme.sans(16, AppTheme.ink(context), weight: FontWeight.w700, spacing: -0.2)),
+                              Text('민감항목 추가 공제 신청', style: AppTheme.sans(15, AppTheme.ink(context), weight: FontWeight.w700, spacing: -0.2)),
                               const SizedBox(height: 4),
-                              Text('의료비 · 기부금 · 교육비 (5월 종합소득세)', style: AppTheme.sans(12.5, AppTheme.inkSecondary(context))),
+                              Text('의료비 · 기부금 · 교육비 (5월 종합소득세)', style: AppTheme.sans(12, AppTheme.inkSecondary(context))),
                             ],
                           ),
                         ),
@@ -1123,7 +1123,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
               ],
 
               if (_isFreelancer) ...[
-                Text('나의 프리랜서 업종코드', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.w600)),
+                Text('나의 프리랜서 업종코드', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
                 InkWell(
                   onTap: _openOccupationSheet,
@@ -1162,7 +1162,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('현재까지 누적 수입', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.w600)),
+                          Text('현재까지 누적 수입', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _freelancerIncomeController,
@@ -1192,7 +1192,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('일한 개월 수', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.w600)),
+                          Text('일한 개월 수', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _monthsController,
@@ -1206,7 +1206,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                               contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                               suffixText: '개월',
-                              suffixStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.bold),
+                              suffixStyle: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ],
@@ -1226,7 +1226,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('기타 합산소득 (선택)', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('기타 합산소득 (선택)', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
                         Text('연금·기타소득이 있다면 5월 신고 시 합산됩니다.', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!.withOpacity(0.6), fontSize: 12)),
                         const SizedBox(height: 20),
@@ -1246,7 +1246,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(Icons.upload_file_outlined, size: 13, color: AppTheme.accentColor(context)),
                                 const SizedBox(width: 5),
-                                Text('PDF로 불러오기', style: AppTheme.sans(11.5, AppTheme.accentColor(context), weight: FontWeight.w700)),
+                                Text('PDF로 불러오기', style: AppTheme.sans(12, AppTheme.accentColor(context), weight: FontWeight.w700)),
                               ]),
                             ),
                           ),
@@ -1271,7 +1271,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('소득공제 추가항목 (선택)', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('소득공제 추가항목 (선택)', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
                         Text('과세표준을 낮춰 세금을 줄여줍니다. 없으면 비워두세요.', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!.withOpacity(0.6), fontSize: 12)),
                         const SizedBox(height: 20),
@@ -1294,7 +1294,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('세액공제 (선택)', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('세액공제 (선택)', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 4),
                         Text('보험료·자녀·연금저축은 5월 신고 시 추가 공제됩니다.', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!.withOpacity(0.6), fontSize: 12)),
                         const SizedBox(height: 20),
@@ -1330,7 +1330,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
 
                 // 프리랜서 전용: 건강보험 지역가입자 소득공제
                 if (!_isEmployee) ...[
-                  Text('건강보험 지역가입자 보험료 (전액 소득공제)', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.w600)),
+                  Text('건강보험 지역가입자 보험료 (전액 소득공제)', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   Text('* 직장가입자가 아닌 경우, 납부한 건강보험료 전액이 소득공제됩니다.', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!.withOpacity(0.6), fontSize: 13, fontWeight: FontWeight.w500)),
                   const SizedBox(height: 8),
@@ -1363,7 +1363,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('노란우산공제 가입', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 16, fontWeight: FontWeight.bold)),
+                              Text('노란우산공제 가입', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!, fontSize: 15, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 4),
                               Text('사업소득 4천만 이하 최대 600만원 공제', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge!.color!.withOpacity(0.8), fontSize: 12, fontWeight: FontWeight.w500)),
                             ],
