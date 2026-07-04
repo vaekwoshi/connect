@@ -4,6 +4,8 @@ import '../security/notification_helper.dart';
 import '../data/db_helper.dart';
 import 'system_reminder_catalog.dart';
 import 'custom_reminder_service.dart';
+import 'notification_history.dart';
+import 'event_reminder_prefs.dart';
 
 /// 세끌 시스템 알림 예약 — 세무 기한·문턱 등 '앱 기본' 알림.
 /// 정의는 [kSystemReminderCatalog](system_reminder_catalog.dart)가 단일 출처,
@@ -14,6 +16,7 @@ class ReminderScheduler {
 
   /// 알림 켜짐 시 — 시스템 기한 재예약 + 기록 넛지 시드 보장(유형별).
   static Future<void> scheduleAll({required int payDay, required String userType}) async {
+    await NotificationHistory.backfill(userType: userType);
     await scheduleTaxSeason(userType);
     await customReminderService.ensureRecordSeed(payDay: payDay);
   }
@@ -55,11 +58,38 @@ class ReminderScheduler {
   /// 공제 문턱 임박(80%) — 즉시 1회. 설정에서 꺼져 있으면 보내지 않는다.
   static Future<void> showThresholdNear() => _fireEvent('sys_threshold_near');
 
-  /// 이번 달 지출 목표 80% 도달 — 즉시 1회.
-  static Future<void> showBudgetNear() => _fireEvent('sys_budget_near');
+  static const int idBudgetNear = 1014;
+  static const int idBudgetOver = 1015;
 
-  /// 이번 달 지출 목표 초과 — 즉시 1회.
-  static Future<void> showBudgetOver() => _fireEvent('sys_budget_over');
+  /// 예산 80%·초과 알림 — 감지 즉시 쏘지 않고 지연 예약한다(이미 화면을 보고 있는
+  /// 상태라 즉시 알림이 무의미함). 16시 이전 감지면 당일 저녁(기본 20:00, 리마인더에서
+  /// 사용자 편집 가능), 16시 이후면 다음날 아침 9시(고정) 예약.
+  static Future<void> scheduleBudgetAlert({required bool over}) async {
+    final pref = await resolveEventPref('budget_alert');
+    if (!pref.enabled) return;
+    final id = over ? idBudgetOver : idBudgetNear;
+    final title = over ? '이번 달 지출 목표를 초과했어요' : '이번 달 지출 목표의 80%에 도달했어요';
+    final body = over
+        ? '지출이 목표액을 넘었어요. 남은 기간 지출을 줄이면 다음 달이 편해져요.'
+        : '지출 목표까지 얼마 남지 않았어요. 남은 달을 조금 아껴볼까요?';
+    final now = DateTime.now();
+    var target = now.hour < 16
+        ? DateTime(now.year, now.month, now.day, pref.hour, pref.minute)
+        : DateTime(now.year, now.month, now.day + 1, 9, 0);
+    if (!target.isAfter(now)) {
+      target = DateTime(now.year, now.month, now.day + 1, 9, 0);
+    }
+    await notificationHelper.scheduleNotification(
+      id: id,
+      title: title,
+      body: body,
+      delay: target.difference(now),
+    );
+  }
+
+  /// 예산 목표 아래로 다시 내려가는 등 조건이 해소되면 예약된 지연 알림을 취소한다.
+  static Future<void> cancelBudgetAlert({required bool over}) =>
+      notificationHelper.cancel(over ? idBudgetOver : idBudgetNear);
 
   static Future<void> _fireEvent(String key) async {
     final s = systemReminderByKey(key);
@@ -71,24 +101,6 @@ class ReminderScheduler {
       title: s.title,
       body: s.body,
       logCategory: key,
-    );
-  }
-
-  /// 월급날 알림 — 매월 [day]일 09:00 반복 (id=2001).
-  static Future<void> schedulePayday(int day) async {
-    final now = DateTime.now();
-    var when = DateTime(now.year, now.month, day, 9);
-    if (!when.isAfter(now)) {
-      final nextMonth = now.month == 12 ? 1 : now.month + 1;
-      final nextYear  = now.month == 12 ? now.year + 1 : now.year;
-      when = DateTime(nextYear, nextMonth, day, 9);
-    }
-    await notificationHelper.scheduleAtDate(
-      id: 2001,
-      title: '월급날이에요 💰',
-      body: '이번 달 급여를 가계부에 기록해 보세요.',
-      when: when,
-      matchComponents: DateTimeComponents.dayOfMonthAndTime,
     );
   }
 
@@ -117,20 +129,27 @@ class ReminderScheduler {
     }
   }
 
-  /// 지출 미기록 넛지 — [lastExpenseDate]가 3일 이상 전이면 즉시 1회 (id=2002).
-  static Future<void> showNudgeIfInactive(DateTime? lastExpenseDate) async {
-    if (lastExpenseDate == null) return;
+  static const int idInactivityNudge = 2002;
+
+  /// 가계부 미기록 넛지 — 3일 이상 기록이 없으면 다음날 아침(기본 9시, 리마인더에서 편집
+  /// 가능) 지연 알림 예약. 그 사이 기록해서 3일 미만으로 돌아오면 예약을 취소한다.
+  static Future<void> checkInactivityNudge(DateTime? lastExpenseDate) async {
+    final pref = await resolveEventPref('inactivity_nudge');
+    if (!pref.enabled || lastExpenseDate == null) return;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final last  = DateTime(lastExpenseDate.year, lastExpenseDate.month, lastExpenseDate.day);
-    if (today.difference(last).inDays >= 3) {
-      await notificationHelper.showImmediateNotification(
-        id: 2002,
-        title: '가계부 기록이 없어요',
-        body: '최근 며칠간 지출 기록이 없네요. 잠깐 기록해 볼까요?',
-        logCategory: 'ledger_nudge',
-      );
+    final last = DateTime(lastExpenseDate.year, lastExpenseDate.month, lastExpenseDate.day);
+    if (today.difference(last).inDays < 3) {
+      await notificationHelper.cancel(idInactivityNudge);
+      return;
     }
+    final target = DateTime(now.year, now.month, now.day + 1, pref.hour, pref.minute);
+    await notificationHelper.scheduleNotification(
+      id: idInactivityNudge,
+      title: '가계부 기록이 없어요',
+      body: '최근 며칠간 지출 기록이 없네요. 잠깐 기록해 볼까요?',
+      delay: target.difference(now),
+    );
   }
 
   /// 월말 마감 알림 — 이번 달(또는 다음 달) 말일 20:00 (id=2003).

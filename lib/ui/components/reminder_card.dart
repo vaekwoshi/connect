@@ -98,8 +98,8 @@ class _ReminderCardState extends State<ReminderCard> {
       case ReminderFrequency.daily:
         return '매일 $t';
       case ReminderFrequency.weekly:
-        final wd = kWeekdayLabels[((r.weekday ?? r.notifyDate.weekday) - 1) % 7];
-        return '매주 $wd요일 $t';
+        final labels = r.effectiveWeekdays.map((wd) => kWeekdayLabels[(wd - 1) % 7]).join('·');
+        return '매주 $labels요일 $t';
       case ReminderFrequency.monthly:
         return '매월 ${r.notifyDate.day}일 $t';
     }

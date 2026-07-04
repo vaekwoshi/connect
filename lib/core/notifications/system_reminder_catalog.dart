@@ -360,26 +360,6 @@ const List<SystemReminder> kSystemReminderCatalog = [
     scheduleLabel: '공제 문턱 80% 도달 시',
     employee: true,
   ),
-
-  // ── 맞춤 (이벤트, 전체) ──
-  SystemReminder(
-    key: 'sys_budget_near',
-    notifId: 1014,
-    category: SysCategory.moment,
-    title: '이번 달 지출 목표의 80%에 도달했어요',
-    body: '지출 목표까지 얼마 남지 않았어요. 남은 달을 조금 아껴볼까요?',
-    scheduleLabel: '이번 달 지출 목표 80% 도달 시',
-    employee: true, business: true,
-  ),
-  SystemReminder(
-    key: 'sys_budget_over',
-    notifId: 1015,
-    category: SysCategory.moment,
-    title: '이번 달 지출 목표를 초과했어요',
-    body: '지출이 목표액을 넘었어요. 남은 기간 지출을 줄이면 다음 달이 편해져요.',
-    scheduleLabel: '이번 달 지출 목표 초과 시',
-    employee: true, business: true,
-  ),
 ];
 
 /// 유형에 해당하는 시스템 알림만.

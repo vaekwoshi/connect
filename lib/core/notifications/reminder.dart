@@ -46,7 +46,8 @@ class Reminder {
   final int notifyHour;
   final int notifyMinute;
   final ReminderFrequency frequency; // 반복 주기
-  final int? weekday;       // 매주용 요일 (1=월 … 7=일)
+  final int? weekday;       // 매주용 요일 단일값(구버전 호환) — 표시는 weekdays 우선
+  final List<int> weekdays; // 매주용 요일 목록 (1=월 … 7=일). 비어있으면 notifyDate.weekday 1개로 취급.
   final bool enabled;
   final int? notifId;       // flutter_local_notifications id
 
@@ -60,9 +61,14 @@ class Reminder {
     this.notifyMinute = 0,
     this.frequency = ReminderFrequency.once,
     this.weekday,
+    this.weekdays = const [],
     this.enabled = true,
     this.notifId,
   });
+
+  /// 매주 반복 시 실제로 쓸 요일 목록(단일값 구버전 폴백 포함).
+  List<int> get effectiveWeekdays =>
+      weekdays.isNotEmpty ? weekdays : [weekday ?? notifyDate.weekday];
 
   bool get isRepeating => frequency != ReminderFrequency.once;
 
@@ -80,6 +86,7 @@ class Reminder {
     int? notifyMinute,
     ReminderFrequency? frequency,
     int? weekday,
+    List<int>? weekdays,
     bool? enabled,
     int? notifId,
   }) =>
@@ -93,6 +100,7 @@ class Reminder {
         notifyMinute: notifyMinute ?? this.notifyMinute,
         frequency: frequency ?? this.frequency,
         weekday: weekday ?? this.weekday,
+        weekdays: weekdays ?? this.weekdays,
         enabled: enabled ?? this.enabled,
         notifId: notifId ?? this.notifId,
       );
@@ -106,7 +114,8 @@ class Reminder {
         'notify_hour': notifyHour,
         'notify_minute': notifyMinute,
         'frequency': frequency.key,
-        'weekday': weekday,
+        'weekday': weekdays.isNotEmpty ? weekdays.first : weekday,
+        'weekdays': weekdays.isNotEmpty ? weekdays.join(',') : null,
         'enabled': enabled,
         'notif_id': notifId,
       };
@@ -121,6 +130,11 @@ class Reminder {
     } else {
       freq = ReminderFrequency.once;
     }
+    // 구버전 호환: weekdays(복수)가 없으면 weekday(단일) 하나짜리 목록으로 해석.
+    final wdsStr = m['weekdays'] as String?;
+    final wds = (wdsStr != null && wdsStr.isNotEmpty)
+        ? wdsStr.split(',').map((e) => int.tryParse(e)).whereType<int>().toList()
+        : <int>[];
     return Reminder(
       id: m['id'] as int?,
       title: (m['title'] as String?) ?? '',
@@ -134,6 +148,7 @@ class Reminder {
       notifyMinute: (m['notify_minute'] as int?) ?? 0,
       frequency: freq,
       weekday: m['weekday'] as int?,
+      weekdays: wds,
       enabled: m['enabled'] == true || m['enabled'] == 1,
       notifId: m['notif_id'] as int?,
     );

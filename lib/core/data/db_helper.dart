@@ -49,11 +49,20 @@ abstract class DatabaseService {
   Future<Map<String, bool>> getReminderSettings();
   Future<void> setReminderSetting(String key, bool enabled);
   // 발화 알림 로그 (v23) — 즉시형 알림 기록 (홈 알림함)
-  Future<void> insertNotificationLog({required String title, required String body, String? category});
+  // firedAt 생략 시 호출 시각(now)으로 기록 — 예약 알림 역산 백필(v27)은 실제 발화 시각을 넘긴다.
+  Future<void> insertNotificationLog({required String title, required String body, String? category, DateTime? firedAt});
   Future<List<Map<String, dynamic>>> getNotificationLogs();
   Future<void> markAllNotificationsRead();
   Future<int> unreadNotificationCount();
   Future<void> clearNotificationLogs();
+  // 잡다한 단일 키-값 앱 상태 (v27) — 알림 히스토리 역산 체크포인트 등
+  Future<String?> getAppState(String key);
+  Future<void> setAppState(String key, String value);
+  // 이벤트 트리거형 기본 제공 알림 설정 (v28) — 예산 알림·미기록 넛지처럼 날짜가 아니라
+  // 조건 충족 시 발화하는 알림의 on/off + 발화 시각. 행 없으면 코드 기본값 사용.
+  Future<Map<String, Map<String, dynamic>>> getEventReminderPrefs();
+  Future<void> setEventReminderPref(String key,
+      {required bool enabled, required int hour, required int minute});
   // 고정 지출 템플릿 (v25)
   Future<int> insertRecurringTemplate(RecurringTemplate t);
   Future<List<RecurringTemplate>> getRecurringTemplates();
@@ -110,6 +119,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
       repeat_monthly INTEGER DEFAULT 0,
       frequency TEXT DEFAULT 'once',
       weekday INTEGER,
+      weekdays TEXT,
       enabled INTEGER DEFAULT 1,
       notif_id INTEGER
     )
@@ -170,6 +180,24 @@ class SqfliteDatabaseHelper implements DatabaseService {
     )
   ''';
 
+  /// 잡다한 단일 키-값 앱 상태 (v27). 알림 히스토리 역산 체크포인트 등.
+  static const String _appStateTableSql = '''
+    CREATE TABLE IF NOT EXISTS app_state (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
+  ''';
+
+  /// 이벤트 트리거형 기본 제공 알림 설정 (v28). 예산 알림·미기록 넛지.
+  static const String _eventReminderPrefsTableSql = '''
+    CREATE TABLE IF NOT EXISTS event_reminder_prefs (
+      key TEXT PRIMARY KEY,
+      enabled INTEGER DEFAULT 1,
+      hour INTEGER,
+      minute INTEGER
+    )
+  ''';
+
   @override
   Future<void> initDatabase() async {
     if (_db != null) return;
@@ -179,7 +207,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
 
     _db = await openDatabase(
       path,
-      version: 26,
+      version: 28,
       onCreate: (db, version) async {
         // 프로필 테이블 생성
         await db.execute('''
@@ -304,6 +332,10 @@ class SqfliteDatabaseHelper implements DatabaseService {
         await db.execute(_recurringConfirmationsTableSql);
         // 카드 결제일 (v26)
         await db.execute(_cardPaymentDatesTableSql);
+        // 앱 상태 (v27)
+        await db.execute(_appStateTableSql);
+        // 이벤트 트리거형 기본 제공 알림 설정 (v28)
+        await db.execute(_eventReminderPrefsTableSql);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -514,6 +546,19 @@ class SqfliteDatabaseHelper implements DatabaseService {
         if (oldVersion < 26) {
           try {
             await db.execute(_cardPaymentDatesTableSql);
+          } catch (e) {}
+        }
+        if (oldVersion < 27) {
+          try {
+            await db.execute(_appStateTableSql);
+          } catch (e) {}
+          try {
+            await db.execute('ALTER TABLE reminders ADD COLUMN weekdays TEXT');
+          } catch (e) {}
+        }
+        if (oldVersion < 28) {
+          try {
+            await db.execute(_eventReminderPrefsTableSql);
           } catch (e) {}
         }
       },
@@ -976,13 +1021,13 @@ class SqfliteDatabaseHelper implements DatabaseService {
   }
 
   @override
-  Future<void> insertNotificationLog({required String title, required String body, String? category}) async {
+  Future<void> insertNotificationLog({required String title, required String body, String? category, DateTime? firedAt}) async {
     final db = _db;
     if (db == null) return;
     await db.insert('notification_log', {
       'title': title,
       'body': body,
-      'fired_at': DateTime.now().toIso8601String(),
+      'fired_at': (firedAt ?? DateTime.now()).toIso8601String(),
       'is_read': 0,
       'category': category,
     });
@@ -1017,6 +1062,49 @@ class SqfliteDatabaseHelper implements DatabaseService {
     final db = _db;
     if (db == null) return;
     await db.delete('notification_log');
+  }
+
+  @override
+  Future<String?> getAppState(String key) async {
+    final db = _db;
+    if (db == null) return null;
+    final rows = await db.query('app_state', where: 'key = ?', whereArgs: [key], limit: 1);
+    if (rows.isEmpty) return null;
+    return rows.first['value'] as String?;
+  }
+
+  @override
+  Future<void> setAppState(String key, String value) async {
+    final db = _db;
+    if (db == null) return;
+    await db.insert('app_state', {'key': key, 'value': value},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<Map<String, Map<String, dynamic>>> getEventReminderPrefs() async {
+    final db = _db;
+    if (db == null) return {};
+    final rows = await db.query('event_reminder_prefs');
+    return {
+      for (final r in rows)
+        r['key'] as String: {
+          'enabled': r['enabled'] == 1,
+          'hour': r['hour'] as int?,
+          'minute': r['minute'] as int?,
+        }
+    };
+  }
+
+  @override
+  Future<void> setEventReminderPref(String key,
+      {required bool enabled, required int hour, required int minute}) async {
+    final db = _db;
+    if (db == null) return;
+    await db.insert(
+        'event_reminder_prefs',
+        {'key': key, 'enabled': enabled ? 1 : 0, 'hour': hour, 'minute': minute},
+        conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   @override
@@ -1074,6 +1162,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'repeat_monthly': (r['frequency'] == 'monthly' || r['repeat_monthly'] == true) ? 1 : 0,
         'frequency': r['frequency'] ?? 'once',
         'weekday': r['weekday'],
+        'weekdays': r['weekdays'],
         'enabled': r['enabled'] == false ? 0 : 1,
         'notif_id': r['notif_id'],
       };
@@ -1089,6 +1178,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'repeat_monthly': row['repeat_monthly'] == 1,
         'frequency': row['frequency'],
         'weekday': row['weekday'],
+        'weekdays': row['weekdays'],
         'enabled': row['enabled'] == 1,
         'notif_id': row['notif_id'],
       };
@@ -1258,6 +1348,8 @@ class SqfliteDatabaseHelper implements DatabaseService {
       await db.execute("DELETE FROM recurring_templates");
       await db.execute("DELETE FROM recurring_confirmations");
       await db.execute("DELETE FROM card_payment_dates");
+      await db.execute("DELETE FROM app_state");
+      await db.execute("DELETE FROM event_reminder_prefs");
     } catch (e) {
       // 무시
     }
@@ -1574,13 +1666,13 @@ class InMemoryDatabaseHelper implements DatabaseService {
   final List<Map<String, dynamic>> _notificationLogs = [];
 
   @override
-  Future<void> insertNotificationLog({required String title, required String body, String? category}) async {
+  Future<void> insertNotificationLog({required String title, required String body, String? category, DateTime? firedAt}) async {
     if (_isClosed) return;
     _notificationLogs.insert(0, {
       'id': _notificationLogs.length + 1,
       'title': title,
       'body': body,
-      'fired_at': DateTime.now().toIso8601String(),
+      'fired_at': (firedAt ?? DateTime.now()).toIso8601String(),
       'is_read': 0,
       'category': category,
     });
@@ -1610,6 +1702,35 @@ class InMemoryDatabaseHelper implements DatabaseService {
   Future<void> clearNotificationLogs() async {
     if (_isClosed) return;
     _notificationLogs.clear();
+  }
+
+  final Map<String, String> _appState = {};
+
+  @override
+  Future<String?> getAppState(String key) async {
+    if (_isClosed) return null;
+    return _appState[key];
+  }
+
+  @override
+  Future<void> setAppState(String key, String value) async {
+    if (_isClosed) return;
+    _appState[key] = value;
+  }
+
+  final Map<String, Map<String, dynamic>> _eventReminderPrefs = {};
+
+  @override
+  Future<Map<String, Map<String, dynamic>>> getEventReminderPrefs() async {
+    if (_isClosed) return {};
+    return {for (final e in _eventReminderPrefs.entries) e.key: Map<String, dynamic>.from(e.value)};
+  }
+
+  @override
+  Future<void> setEventReminderPref(String key,
+      {required bool enabled, required int hour, required int minute}) async {
+    if (_isClosed) return;
+    _eventReminderPrefs[key] = {'enabled': enabled, 'hour': hour, 'minute': minute};
   }
 
   // 고정 지출 템플릿 (v25) — 웹 인메모리 구현
@@ -1734,6 +1855,8 @@ class InMemoryDatabaseHelper implements DatabaseService {
     _reminderSettings.clear();
     _recurringTemplates.clear();
     _recurringConfirmations.clear();
+    _appState.clear();
+    _eventReminderPrefs.clear();
     await close();
   }
 

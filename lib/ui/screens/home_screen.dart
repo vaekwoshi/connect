@@ -255,11 +255,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final all = await dbService.getExpenses();
     double credit = 0.0;
     double debit = 0.0;
+    DateTime? lastExpenseDate;
     for (final e in all) {
       final eStart = DateTime(e.date.year, e.date.month, e.date.day);
       final eEnd = e.endDate != null
           ? DateTime(e.endDate!.year, e.endDate!.month, e.endDate!.day)
           : eStart;
+      if (lastExpenseDate == null || eEnd.isAfter(lastExpenseDate)) {
+        lastExpenseDate = eEnd;
+      }
       // 이번 달과 겹치는 항목 포함
       if (!eEnd.isBefore(firstOfMonth) && !eStart.isAfter(lastOfMonth)) {
         if (e.paymentMethod == '신용카드') {
@@ -276,27 +280,37 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       _checkCardThreshold();
       _checkBudget();
+      if (!kIsWeb && _notificationsEnabled) {
+        ReminderScheduler.checkInactivityNudge(lastExpenseDate);
+      }
     }
   }
 
-  /// 이번 달 지출 합계가 목표액의 80%·100%에 처음 닿으면 각각 1회 알림.
+  /// 이번 달 지출 합계가 목표액의 80%·100%에 처음 닿으면 각각 1회 지연 알림 예약,
+  /// 다시 그 아래로 내려가면 예약된 알림을 취소한다.
   void _checkBudget() {
     if (kIsWeb || !_notificationsEnabled || _expenseTarget <= 0) return;
     final total = _creditCardTotal + _debitCashTotal;
     if (total >= _expenseTarget) {
       if (!_budgetOverNotified) {
         _budgetOverNotified = true;
-        ReminderScheduler.showBudgetOver();
+        ReminderScheduler.scheduleBudgetAlert(over: true);
       }
     } else {
-      _budgetOverNotified = false;
+      if (_budgetOverNotified) {
+        _budgetOverNotified = false;
+        ReminderScheduler.cancelBudgetAlert(over: true);
+      }
       if (total >= _expenseTarget * 0.8) {
         if (!_budgetNearNotified) {
           _budgetNearNotified = true;
-          ReminderScheduler.showBudgetNear();
+          ReminderScheduler.scheduleBudgetAlert(over: false);
         }
       } else {
-        _budgetNearNotified = false;
+        if (_budgetNearNotified) {
+          _budgetNearNotified = false;
+          ReminderScheduler.cancelBudgetAlert(over: false);
+        }
       }
     }
   }

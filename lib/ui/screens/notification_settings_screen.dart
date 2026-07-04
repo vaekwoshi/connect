@@ -90,11 +90,8 @@ class _NotificationSettingsScreenState
     final sys = systemRemindersFor(widget.userType);
     final deadlines =
         sys.where((s) => s.category == SysCategory.deadline).toList();
-    final thresholds = sys
-        .where((s) =>
-            s.category == SysCategory.moment &&
-            !s.key.startsWith('sys_budget'))
-        .toList();
+    final thresholds =
+        sys.where((s) => s.category == SysCategory.moment).toList();
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -130,29 +127,6 @@ class _NotificationSettingsScreenState
                   for (final s in thresholds) _sysRow(s),
                 ],
 
-                // ── 3. 가계부 & 예산 (제2모드 전용) ──
-                _catDivider(),
-                _catHeader('가계부 & 예산'),
-                _lockedRow(
-                  '지출 목표 80% · 초과 알림',
-                  '자동 연동(제2모드) 출시 후 활성화돼요',
-                ),
-
-                // ── 4. 만료 알림 ──
-                _catDivider(),
-                _catHeader('만료 알림'),
-                _lockedRow(
-                  '면허 · 여권 · 전세 만기',
-                  '직접 날짜를 입력하면 알려드릴게요',
-                ),
-
-                // ── 5. 기록 넛지 ──
-                _catDivider(),
-                _catHeader('기록 넛지'),
-                _lockedRow(
-                  '가계부 미기록 넛지',
-                  '며칠 이상 기록하지 않으면 알려드려요',
-                ),
               ],
             ),
     );
@@ -266,41 +240,4 @@ class _NotificationSettingsScreenState
     );
   }
 
-  Widget _lockedRow(String title, String desc) {
-    final tert = AppTheme.inkTertiary(context);
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        style: AppTheme.sans(15, tert,
-                            weight: FontWeight.w700)),
-                    const SizedBox(height: 3),
-                    Text(desc, style: AppTheme.sans(12, tert)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppTheme.line(context)),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: Text('준비 중', style: AppTheme.sans(11, tert)),
-              ),
-            ],
-          ),
-        ),
-        AppTheme.hairline(context),
-      ],
-    );
-  }
 }

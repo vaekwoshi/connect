@@ -737,7 +737,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     if (confirmed == null || !mounted) return;
     final profile = await dbService.getProfile() ?? {};
     await dbService.saveProfile({...profile, 'pay_day': confirmed});
-    if (!kIsWeb) await ReminderScheduler.schedulePayday(confirmed);
     if (mounted) setState(() => _paydayDay = confirmed);
   }
 

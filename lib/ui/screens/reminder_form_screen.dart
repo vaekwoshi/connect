@@ -11,7 +11,8 @@ import '../../core/notifications/custom_reminder_service.dart';
 /// 제목 · 반복(한번/매일/매주/매월) · 조건부(날짜/요일/일) · 인라인 시각.
 class ReminderFormScreen extends StatefulWidget {
   final Reminder? existing; // null이면 신규
-  const ReminderFormScreen({super.key, this.existing});
+  final String? initialTitle; // 프리셋 칩에서 넘어온 미리채움 제목(신규 생성시만 사용)
+  const ReminderFormScreen({super.key, this.existing, this.initialTitle});
 
   @override
   State<ReminderFormScreen> createState() => _ReminderFormScreenState();
@@ -21,7 +22,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
   final _titleCtrl = TextEditingController();
   ReminderFrequency _freq = ReminderFrequency.monthly;
   DateTime _onceDate = DateTime.now();
-  int _weekday = DateTime.now().weekday; // 1=월…7=일
+  Set<int> _weekdays = {DateTime.now().weekday}; // 1=월…7=일, 복수 선택
   int _monthDay = DateTime.now().day.clamp(1, 28);
   int _hour = 9;
   int _minute = 0;
@@ -32,6 +33,9 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
 
   bool get _isEdit => widget.existing != null;
 
+  /// 기본 제공 리마인더(kind != 'custom') 수정 중이면 시각 외 필드는 잠근다.
+  bool get _isFixedKind => _isEdit && widget.existing!.kind != 'custom';
+
   @override
   void initState() {
     super.initState();
@@ -40,10 +44,12 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
       _titleCtrl.text = e.title;
       _freq = e.frequency;
       _onceDate = e.notifyDate;
-      _weekday = e.weekday ?? e.notifyDate.weekday;
+      _weekdays = e.effectiveWeekdays.toSet();
       _monthDay = e.notifyDate.day.clamp(1, 28);
       _hour = e.notifyHour;
       _minute = e.notifyMinute;
+    } else if (widget.initialTitle != null) {
+      _titleCtrl.text = widget.initialTitle!;
     }
     _hourCtrl = FixedExtentScrollController(initialItem: _hour);
     _minCtrl = FixedExtentScrollController(initialItem: _minute);
@@ -84,7 +90,8 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
       kind: widget.existing?.kind ?? 'custom', // 기록 시드 등 기존 종류 보존
       frequency: _freq,
       notifyDate: _composedNotifyDate(),
-      weekday: _freq == ReminderFrequency.weekly ? _weekday : null,
+      weekday: _freq == ReminderFrequency.weekly ? (_weekdays.toList()..sort()).first : null,
+      weekdays: _freq == ReminderFrequency.weekly ? (_weekdays.toList()..sort()) : const [],
       notifyHour: _hour,
       notifyMinute: _minute,
       enabled: true,
@@ -153,19 +160,30 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
             Text(_isEdit ? '알림을\n다듬어요' : '챙길 일을\n알림으로',
                 style: AppTheme.serif(28, ink, spacing: -0.5, height: 1.2)),
 
-            // ── 제목 ──
-            const SizedBox(height: 26),
-            Text('무엇을 알릴까요?'.toUpperCase(), style: AppTheme.label(context)),
-            const SizedBox(height: 12),
-            _titleField(ink, sub),
+            if (_isFixedKind) ...[
+              // ── 기본 제공 리마인더 — 제목·주기 고정, 안내만 ──
+              const SizedBox(height: 26),
+              Text('무엇을 알릴까요?'.toUpperCase(), style: AppTheme.label(context)),
+              const SizedBox(height: 12),
+              Text(_titleCtrl.text, style: AppTheme.sans(15, ink, weight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text('기본 제공 알림은 시각만 바꿀 수 있어요.',
+                  style: AppTheme.sans(12, AppTheme.inkTertiary(context), height: 1.45)),
+            ] else ...[
+              // ── 제목 ──
+              const SizedBox(height: 26),
+              Text('무엇을 알릴까요?'.toUpperCase(), style: AppTheme.label(context)),
+              const SizedBox(height: 12),
+              _titleField(ink, sub),
 
-            // ── 반복 ──
-            const SizedBox(height: 26),
-            Text('언제 알릴까요?'.toUpperCase(), style: AppTheme.label(context)),
-            const SizedBox(height: 12),
-            _freqChips(),
-            const SizedBox(height: 16),
-            _conditionalPicker(ink, sub),
+              // ── 반복 ──
+              const SizedBox(height: 26),
+              Text('언제 알릴까요?'.toUpperCase(), style: AppTheme.label(context)),
+              const SizedBox(height: 12),
+              _freqChips(),
+              const SizedBox(height: 16),
+              _conditionalPicker(ink, sub),
+            ],
 
             // ── 시각 ──
             const SizedBox(height: 26),
@@ -284,14 +302,21 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
     if (picked != null) setState(() => _onceDate = picked);
   }
 
+  /// 복수 요일 선택 — 최소 1개는 항상 남긴다(전부 해제 방지).
   Widget _weekdayRow() {
     return Row(
       children: [
         for (int wd = 1; wd <= 7; wd++) ...[
           Expanded(
-            child: _miniCell(kWeekdayLabels[wd - 1], _weekday == wd,
-                () => setState(() => _weekday = wd),
-                danger: wd == 7, warn: wd == 6),
+            child: _miniCell(kWeekdayLabels[wd - 1], _weekdays.contains(wd), () {
+              setState(() {
+                if (_weekdays.contains(wd)) {
+                  if (_weekdays.length > 1) _weekdays.remove(wd);
+                } else {
+                  _weekdays.add(wd);
+                }
+              });
+            }, danger: wd == 7, warn: wd == 6),
           ),
           if (wd != 7) const SizedBox(width: 6),
         ],

@@ -25,13 +25,21 @@ class CustomReminderService {
   /// 수정 — 기존 알림 취소 후 활성 시 재예약.
   Future<void> update(Reminder r) async {
     await dbService.updateReminder(r.toMap());
-    if (r.notifId != null) await _safeCancel(r.notifId!);
+    if (r.notifId != null) await _cancelAllVariants(r.notifId!);
     if (r.enabled) await _schedule(r);
   }
 
   Future<void> remove(Reminder r) async {
-    if (r.notifId != null) await _safeCancel(r.notifId!);
+    if (r.notifId != null) await _cancelAllVariants(r.notifId!);
     if (r.id != null) await dbService.deleteReminder(r.id!);
+  }
+
+  /// 기본 id + 매주 요일별 하위 id(7개) 전부 취소 — 주기 변경 시 잔여 예약 방지.
+  Future<void> _cancelAllVariants(int notifId) async {
+    await _safeCancel(notifId);
+    for (int wd = 1; wd <= 7; wd++) {
+      await _safeCancel(_weeklySubId(notifId, wd));
+    }
   }
 
   Future<Reminder> toggle(Reminder r, bool on) async {
@@ -40,8 +48,8 @@ class CustomReminderService {
     return updated;
   }
 
-  /// 기록 넛지 시드 — 최초 1회만 reminders에 'record' 항목을 만든다(매월·급여일·10시).
-  /// 구 ReminderScheduler.scheduleMonthlyNudge를 대체. 한 번 만들면 사용자가 자유 편집.
+  /// 기록 넛지 시드 — 최초 1회만 reminders에 'record' 항목을 만든다(매월·급여일·18시).
+  /// 월급날 알림과 가계부 기록 넛지를 하나로 합친 기본 제공 리마인더. 한 번 만들면 사용자가 시각만 편집 가능.
   Future<void> ensureRecordSeed({required int payDay}) async {
     final all = await list();
     final exists = all.any((r) => r.kind == 'record');
@@ -49,11 +57,11 @@ class CustomReminderService {
     final now = DateTime.now();
     final day = payDay.clamp(1, 28);
     await add(Reminder(
-      title: '이번 달 가계부 기록하기',
+      title: '월급날이에요! 가계부에 기록해볼까요?',
       kind: 'record',
       frequency: ReminderFrequency.monthly,
       notifyDate: DateTime(now.year, now.month, day),
-      notifyHour: 10,
+      notifyHour: 18,
       notifyMinute: 0,
       enabled: true,
     ));
@@ -79,13 +87,10 @@ class CustomReminderService {
         if (!when.isAfter(now)) when = when.add(const Duration(days: 1));
         return when;
       case ReminderFrequency.weekly:
-        final target = r.weekday ?? r.notifyDate.weekday; // 1=월…7=일
-        var when = DateTime(now.year, now.month, now.day, h, m);
-        var add = (target - when.weekday) % 7;
-        if (add < 0) add += 7;
-        when = when.add(Duration(days: add));
-        if (!when.isAfter(now)) when = when.add(const Duration(days: 7));
-        return when;
+        // 선택된 요일 중 가장 가까운 다음 발화.
+        return r.effectiveWeekdays
+            .map((wd) => _nextWeekdayInstance(wd, h, m, from: now))
+            .reduce((a, b) => a.isBefore(b) ? a : b);
       case ReminderFrequency.monthly:
         final day = r.notifyDate.day.clamp(1, 28); // 모든 달 존재 보장
         var when = DateTime(now.year, now.month, day, h, m);
@@ -98,7 +103,7 @@ class CustomReminderService {
     }
   }
 
-  /// 반복 주기 → 네이티브 매치 컴포넌트.
+  /// 반복 주기 → 네이티브 매치 컴포넌트. weekly는 요일별 개별 예약(_schedule)이라 여기선 안 쓰임.
   static DateTimeComponents? _matchFor(ReminderFrequency f) {
     switch (f) {
       case ReminderFrequency.once:
@@ -112,9 +117,41 @@ class CustomReminderService {
     }
   }
 
+  /// 매주 반복은 요일마다 별도 네이티브 알람이 필요해 기본 id에서 파생된 하위 id를 쓴다.
+  static int _weeklySubId(int notifId, int weekday) => notifId * 10 + (weekday - 1);
+
+  static DateTime _nextWeekdayInstance(int weekday, int hour, int minute, {DateTime? from}) {
+    final now = from ?? DateTime.now();
+    var when = DateTime(now.year, now.month, now.day, hour, minute);
+    var add = (weekday - when.weekday) % 7;
+    if (add < 0) add += 7;
+    when = when.add(Duration(days: add));
+    if (!when.isAfter(now)) when = when.add(const Duration(days: 7));
+    return when;
+  }
+
   Future<void> _schedule(Reminder r) async {
     final notifId = r.notifId;
     if (notifId == null) return;
+
+    if (r.frequency == ReminderFrequency.weekly) {
+      for (final wd in r.effectiveWeekdays) {
+        final when = _nextWeekdayInstance(wd, r.notifyHour, r.notifyMinute);
+        try {
+          await notificationHelper.scheduleAtDate(
+            id: _weeklySubId(notifId, wd),
+            title: '세끌 리마인더',
+            body: r.title,
+            when: when,
+            matchComponents: DateTimeComponents.dayOfWeekAndTime,
+          );
+        } catch (_) {
+          // 웹 등 미지원 환경에서는 예약을 건너뛴다(UI는 유지).
+        }
+      }
+      return;
+    }
+
     final when = nextInstance(r);
     // 단발인데 이미 지난 시각이면 예약하지 않는다.
     if (r.frequency == ReminderFrequency.once && !when.isAfter(DateTime.now())) {
