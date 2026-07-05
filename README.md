@@ -1,4 +1,4 @@
-# secul
+# sekkeul
 
 A new Flutter project.
 
