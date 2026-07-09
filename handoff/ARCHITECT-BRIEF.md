@@ -4,7 +4,50 @@
 
 ---
 
-## Step 1 — 기록 넛지 문구 userType 분기 + 5월 종합소득세 3.3%/8.8% 정산 안내
+## Step 2 — 지급명세서 발급 확인 알림(KG-6c) + 건강보험 미가입 정기 경고(KG-6d)
+
+### Context (confirmed by reading the code)
+- **KG-6c**: `kSystemReminderCatalog` (`lib/core/notifications/system_reminder_catalog.dart:91+`) is the single source for all fixed-date broadcast notifications. Each `SystemReminder` has `employee`/`business` bool gates checked via `appliesTo()` (line 81-87) — `business: true, employee: false` reaches 프리랜서+N잡러 only (see `isBiz` at line 83), which matches what we want (직장인 제외). notifId 1004 is unused (used ids in this file: 1001-1003, 1005-1013, 1016-1020; 1014/1015 are used elsewhere by `idBudgetNear`/`idBudgetOver` in `reminder_scheduler.dart`, avoid those too). Groups are declared in `kGroupLabels`/`kGroupSchedules` maps (lines 13-26, 28-41) — every existing catalog entry has a `group`.
+- **KG-6d**: The existing "event-type" pattern (`checkTaxReserveShortfall`, `checkInactivityNudge` in `reminder_scheduler.dart:150-260`) is: (1) key + default hour/minute registered in `kEventReminderDefaults` (`lib/core/notifications/event_reminder_prefs.dart:5-11`), (2) a `ReminderScheduler.checkX(...)` static method that calls `resolveEventPref(key)`, and if the bad condition holds, schedules a delayed notification for "tomorrow at pref.hour/minute" (cancels if condition resolved), (3) called from `home_screen.dart` inside the `!kIsWeb && _notificationsEnabled` block that already gates on userType — the 프리랜서/N잡러 branch is at `home_screen.dart:262-272` (calls `checkTaxReserveShortfall`), (4) registered as a toggle row in `reminder_list_screen.dart`'s "기본 제공" `_section` (lines 156-163, via `_eventRow(key, label, prefState)`).
+- `health_enrolled` is a `user_profile` column (`db_helper.dart:260`), read as `profile?['health_enrolled'] == true` (see `reserve_estimator.dart:48`). `home_screen.dart` doesn't currently fetch `profile` in the reminder-check method scope — Bob should fetch it there (`dbService.getProfile()`) alongside the existing 프리랜서/N잡러 block, or find/reuse an existing profile fetch in that method if one exists (check before assuming — don't duplicate an existing call).
+- **Note found while researching, not in scope**: `tax_reserve_shortfall` (an existing, already-shipped event-type reminder) is missing from `reminder_list_screen.dart`'s `_eventRow` list (only `budget_alert`/`inactivity_nudge`/`income_inactivity_nudge`/`recurring_expense_alert` are registered there) — users currently cannot toggle it off or edit its time from the UI. This is a pre-existing gap, not something to fix as part of Step 2. Log it as a new Known Gap (KG-7), do not fix.
+- **Also pre-existing, not in scope**: hardcoded event-type notifIds (`idInactivityNudge=2002`, `idIncomeInactivityNudge=2004`, `idTaxReserveShortfall=2005`) share the same numeric range as user-created custom reminder notifIds (`CustomReminderService._notifBase=2000 + reminder.id`), so a user reminder with `id==2`, `4`, or `5` could theoretically collide. Do not fix — log as KG-8 if you want it tracked, but do not touch `CustomReminderService`'s id scheme in this step.
+
+### Decisions
+- **KG-6c** schedule: **매년 3월 12일** (Project Owner: check as early as possible after the 3/10 submission deadline). notifId **1004**. New group `payment_report` → `kGroupLabels['payment_report'] = '지급명세서'`, `kGroupSchedules['payment_report'] = '매년 3월 12일'`. `employee: false, business: true`.
+  - Title: `'지급명세서 제출됐는지 확인해보세요'`
+  - Body (Project Owner asked for a how-to-check guide in the copy): `'사업소득·기타소득 지급명세서 제출기한(3/10)이 지났어요. 홈택스 로그인 > My홈택스 > 지급명세서 등 제출내역에서 제출 여부를 확인해보세요.'`
+- **KG-6d**: 프리랜서 전용(N잡러 제외 — N잡러는 근로자로서 이미 직장 건강보험에 가입돼 있다고 간주), `health_enrolled == false`일 때만 발동. New event key: `freelancer_health_uninsured`, default `{'hour': 9, 'minute': 0}`. New notifId const `idFreelancerHealthUninsured = 2006` (next free in the 2000-series after 2005 — accept the pre-existing collision-range caveat above, do not redesign the id scheme here).
+  - Title: `'건강보험 지역가입자 등록을 확인해보세요'`
+  - Body: `'프리랜서는 건강보험을 스스로 가입해야 해요. 내 정보에서 미가입으로 표시돼 있어요 — 지역가입자 등록을 하셨는지 확인해보세요.'`
+  - Reminder row label (for `reminder_list_screen.dart`'s "기본 제공" section): `'건강보험 미가입 경고'`. This row should only render when `userType == '프리랜서'` — check how the section currently decides what to show (it currently shows the same 4 rows to everyone) and gate this new row on `widget.userType`.
+
+### Build Order
+1. `system_reminder_catalog.dart`: add `kGroupLabels['payment_report']`/`kGroupSchedules['payment_report']`, add the new `SystemReminder` entry (key `sys_payment_report_check`, notifId 1004, per Decisions above).
+2. `event_reminder_prefs.dart`: add `'freelancer_health_uninsured': {'hour': 9, 'minute': 0}` to `kEventReminderDefaults`.
+3. `reminder_scheduler.dart`: add `static const int idFreelancerHealthUninsured = 2006;` and `checkFreelancerHealthUninsured({required bool healthEnrolled})` mirroring `checkInactivityNudge`'s shape (resolve pref, schedule delayed "tomorrow at pref.hour/minute" if `!healthEnrolled`, else cancel).
+4. `home_screen.dart`: in the existing 프리랜서/N잡러 reminder-check block (~line 262), add a 프리랜서-only branch that fetches `health_enrolled` from the profile and calls `ReminderScheduler.checkFreelancerHealthUninsured(...)`.
+5. `reminder_list_screen.dart`: add the new toggle row to the "기본 제공" section, gated to `widget.userType == '프리랜서'`.
+6. Log KG-7 and KG-8 (see Context notes above) to `handoff/BUILD-LOG.md` Known Gaps — do not fix them.
+7. Run `flutter test test/engine_regression_test.dart` and `flutter analyze` on touched files.
+
+### Flags
+- Do not fix KG-7 (`tax_reserve_shortfall` missing from reminder_list_screen toggle UI) or KG-8 (notifId range collision) as part of this step — log only.
+- Do not build anything for N잡러 health-insurance messaging — explicitly 프리랜서-only per Project Owner decision.
+- If `home_screen.dart`'s reminder-check method already fetches the profile map somewhere nearby, reuse it — don't add a second `dbService.getProfile()` call in the same method.
+
+### Definition of Done
+- [ ] `sys_payment_report_check` fires 매년 3/12, only for 프리랜서/N잡러, with the 홈택스 확인 경로가 포함된 문구
+- [ ] `notification_settings_screen.dart`의 "세금 일정" 섹션에 새 항목이 정상적으로 보임(그룹 라벨 포함)
+- [ ] 프리랜서 유저가 `health_enrolled=false`면 다음날 9시(기본, 편집 가능) 알림 예약, `health_enrolled=true`로 바뀌면 자동 취소
+- [ ] N잡러·직장인에게는 건강보험 미가입 알림이 절대 발동하지 않음
+- [ ] `reminder_list_screen.dart` "기본 제공" 섹션에 새 토글이 프리랜서에게만 보임
+- [ ] KG-7, KG-8이 BUILD-LOG Known Gaps에 기록됨(수정 아님)
+- [ ] `flutter test` 전원 통과, `flutter analyze` 이상 없음
+
+---
+
+## Step 1 — 기록 넛지 문구 userType 분기 + 5월 종합소득세 3.3%/8.8% 정산 안내 (COMPLETE — 커밋 `bbc7d75`)
 
 ### Context (current code, confirmed by reading the files — do not re-derive)
 - `CustomReminderService.ensureRecordSeed({required int payDay})` (`lib/core/notifications/custom_reminder_service.dart:53`) creates a one-time `kind='record'` reminder titled `'월급날이에요! 가계부에 기록해볼까요?'` for every user regardless of `userType`. It only ever runs once (`if (exists) return`).

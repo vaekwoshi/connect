@@ -5,13 +5,32 @@
 
 ## Current Status
 
-**Active step:** Step 1 — CLEAR, awaiting Project Owner go-ahead to commit
-**Last cleared:** Step 0.5 (프리랜서 4대보험 적립 카드 등, TMT 절차 밖에서 진행된 대량 작업) — 2026-07-10, 커밋 `d0e799a`
-**Pending deploy:** NO
+**Active step:** Step 2 — CLEAR, awaiting Project Owner go-ahead to commit
+**Last cleared:** Step 1 — 2026-07-10, 커밋 `bbc7d75`
+**Pending deploy:** NO (프로덕션 배포/APK 빌드 없음)
 
 ---
 
 ## Step History
+
+### Step 2 — 지급명세서 확인 알림(KG-6c) + 건강보험 미가입 정기 경고(KG-6d) — BUILT (review pending)
+*Date: 2026-07-10*
+
+Files changed:
+- `lib/core/notifications/system_reminder_catalog.dart` — `payment_report` 그룹 추가, `sys_payment_report_check`(notifId 1004, 매년 3/12, business만) 카탈로그 항목 신설
+- `lib/core/notifications/event_reminder_prefs.dart` — `freelancer_health_uninsured` 기본값(9:00) 등록
+- `lib/core/notifications/reminder_scheduler.dart` — `checkFreelancerHealthUninsured({required healthEnrolled})` 신설(idFreelancerHealthUninsured=2006), `checkTaxReserveShortfall`과 동일 패턴(조건 해소 시 자동 취소)
+- `lib/ui/screens/home_screen.dart` — `_loadCurrentMonthIncome`에 프리랜서 전용 분기 추가, 프로필의 `health_enrolled` 조회 후 `checkFreelancerHealthUninsured` 호출
+- `lib/ui/screens/reminder_list_screen.dart` — "기본 제공" 섹션에 `freelancer_health_uninsured` 토글 행 추가(프리랜서에게만 표시)
+
+Decisions made:
+- KG-6c 일정 3/12(Project Owner 확정), 문구에 홈택스 확인 경로 포함(Project Owner 요청)
+- KG-6d는 프리랜서 전용(N잡러 제외 — 근로자로서 이미 직장 건강보험 가입 전제)
+- KG-7(tax_reserve_shortfall UI 토글 누락), KG-8(이벤트형 notifId 대역 충돌 가능성) — 리서치 중 발견, 로그만 하고 미수정(범위 밖)
+
+Verification: `flutter test test/engine_regression_test.dart` 53건 전원 통과. `flutter analyze` — 이번 변경으로 인한 신규 이슈 없음(기존 `activeColor` deprecated/미관련 `mounted` 경고 3건은 이번 수정 이전부터 존재).
+Reviewer findings: 대기 중
+Deploy: NO
 
 ### Step 1 — 기록 넛지 문구 userType 분기 + 5월 종합소득세 알림 3.3%/8.8% 정산 안내 — BUILT (review pending)
 *Date: 2026-07-10*
@@ -65,8 +84,10 @@ Deploy: 확인됨
 - **KG-4** — 개인정보처리방침 웹 페이지 없음 — OPEN, GitHub Pages Actions 빌드가 Checkout 단계에서 실패 중 (원인 미확정). 로컬에 미push 커밋 있음. **사용자 지시로 보류 — 명시적 요청 시에만 재개.**
 - ~~**KG-5** — 양식탭 PDF 연동 없음~~ — RESOLVED (`assets/forms/*.pdf` 18종 추가, 커밋 `d0e799a`)
 - ~~**KG-6a** — 기록 넛지 문구 프리랜서 어색함~~ / ~~**KG-6b** — 5월 정산 3.3%/8.8% 안내 없음~~ — **Step 1로 착수 (아래)**
-- **KG-6c** — 지급명세서(원천징수영수증) 발급 확인 알림 없음 — 정확한 제출기한(다음해 2월말 지급명세서 / 반기 간이지급명세서 등) 확인 필요, 착수 보류
-- **KG-6d** — 건강보험 지역가입자 전환 안내 없음 — 트리거 시점·문구 정책 결정 필요, 착수 보류
+- ~~**KG-6c** — 지급명세서 발급 확인 알림 없음~~ — RESOLVED, Step 2 (아래)
+- ~~**KG-6d** — 건강보험 지역가입자 전환 안내 없음~~ — RESOLVED, Step 2 (아래)
+- **KG-7** — `tax_reserve_shortfall` 이벤트형 리마인더가 `reminder_list_screen.dart` "기본 제공" 토글 UI에 등록 안 돼 있음(예산/미기록 넛지 4종만 등록됨) — 사용자가 끄거나 시각 편집 불가. Step 2 리서치 중 발견, 이번 스텝 범위 밖.
+- **KG-8** — 이벤트형 리마인더 고정 notifId(2002/2004/2005/2006)가 커스텀 리마인더 notifId 체계(`_notifBase=2000 + reminder.id`)와 같은 대역이라, 사용자 커스텀 리마인더 id가 2·4·5·6이면 이론상 충돌 가능. Step 2 리서치 중 발견, 스킴 변경은 범위 밖.
 
 ---
 

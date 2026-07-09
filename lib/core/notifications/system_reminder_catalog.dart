@@ -23,6 +23,7 @@ const kGroupLabels = {
   'kmove': 'K-Move 해외취업',
   'property_tax': '재산세',
   'comprehensive_tax': '종합부동산세',
+  'payment_report': '지급명세서',
 };
 
 const kGroupSchedules = {
@@ -38,6 +39,7 @@ const kGroupSchedules = {
   'kmove': '매년 2월 1일 · 8월 1일',
   'property_tax': '7월 16일 · 9월 16일',
   'comprehensive_tax': '매년 12월 1일',
+  'payment_report': '매년 3월 12일',
 };
 
 /// 큐레이션된 시스템 알림 1건.
@@ -391,6 +393,17 @@ const List<SystemReminder> kSystemReminderCatalog = [
     month: 12, day: 1,
     employee: true, business: true,
     requiresHouse: true,
+  ),
+  SystemReminder(
+    key: 'sys_payment_report_check',
+    notifId: 1004,
+    category: SysCategory.deadline,
+    group: 'payment_report',
+    title: '지급명세서 제출됐는지 확인해보세요',
+    body: '사업소득·기타소득 지급명세서 제출기한(3/10)이 지났어요. 홈택스 로그인 > My홈택스 > 지급명세서 등 제출내역에서 제출 여부를 확인해보세요.',
+    scheduleLabel: '매년 3월 12일',
+    month: 3, day: 12,
+    business: true,
   ),
 
   // ── 맞춤 (이벤트, 직장인·N잡러) ──

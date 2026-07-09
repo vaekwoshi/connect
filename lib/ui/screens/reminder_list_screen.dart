@@ -38,6 +38,7 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
   ResolvedEventPref _inactivityPref = const ResolvedEventPref(enabled: true, hour: 9, minute: 0);
   ResolvedEventPref _incomeInactivityPref = const ResolvedEventPref(enabled: true, hour: 9, minute: 0);
   ResolvedEventPref _recurringExpensePref = const ResolvedEventPref(enabled: true, hour: 9, minute: 0);
+  ResolvedEventPref _healthUninsuredPref = const ResolvedEventPref(enabled: true, hour: 9, minute: 0);
   bool _loading = true;
 
   @override
@@ -53,6 +54,7 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
     final inactivity = await resolveEventPref('inactivity_nudge');
     final incomeInactivity = await resolveEventPref('income_inactivity_nudge');
     final recurringExpense = await resolveEventPref('recurring_expense_alert');
+    final healthUninsured = await resolveEventPref('freelancer_health_uninsured');
     if (!mounted) return;
     setState(() {
       _userItems = items;
@@ -60,6 +62,7 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
       _inactivityPref = inactivity;
       _incomeInactivityPref = incomeInactivity;
       _recurringExpensePref = recurringExpense;
+      _healthUninsuredPref = healthUninsured;
       _loading = false;
     });
   }
@@ -160,6 +163,8 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
                     _eventRow('inactivity_nudge', '지출 미기록 넛지', _inactivityPref),
                     _eventRow('income_inactivity_nudge', '수입 미기록 넛지', _incomeInactivityPref),
                     _eventRow('recurring_expense_alert', '고정지출 알림', _recurringExpensePref),
+                    if (widget.userType == '프리랜서')
+                      _eventRow('freelancer_health_uninsured', '건강보험 미가입 경고', _healthUninsuredPref),
                   ]),
                 ],
               ),

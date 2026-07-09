@@ -1,4 +1,4 @@
-# Review Request — Step 1
+# Review Request — Step 2
 *Written by Builder. Read by Reviewer.*
 
 Ready for Review: YES
@@ -7,21 +7,23 @@ Ready for Review: YES
 
 ## What Was Built
 
-기록 넛지(`kind='record'`) 시드 문구를 userType별로 분기했다(프리랜서는 "월급날" 전제 없는 문구, 그 외는 기존 유지 + 기존 프리랜서 유저 1회 마이그레이션). 5월 종합소득세 "신고 시작"(`sys_may_start`) 알림에 프리랜서·N잡러 대상 3.3%/8.8% 원천징수 정산(환급/추가납부) 안내를 덧붙였다.
+지급명세서 발급 확인 알림(KG-6c)을 새 시스템 알림 카탈로그 항목으로 추가(매년 3/12, 프리랜서·N잡러 대상, 홈택스 확인 경로 안내 포함). 건강보험 미가입 정기 경고(KG-6d)를 기존 이벤트형 리마인더 패턴(`checkTaxReserveShortfall`과 동일 구조)으로 추가 — 프리랜서 전용, `health_enrolled=false`면 다음날 9시 지연 알림, 가입 완료 시 자동 취소. 리마인더 목록의 "기본 제공" 섹션에 프리랜서 전용 토글도 추가.
 
 ## Files Changed
 
 | File | Lines | Change |
 |---|---|---|
-| `lib/core/notifications/custom_reminder_service.dart` | 51-76 | `ensureRecordSeed`에 `userType` 파라미터 추가, 제목 분기 + 기존 프리랜서 시드 제목 1회 마이그레이션 fix-up |
-| `lib/core/notifications/reminder_scheduler.dart` | 24 | `scheduleAll` → `ensureRecordSeed` 호출에 `userType` 전달 |
-| `lib/core/notifications/reminder_scheduler.dart` | 51-54, ~70-73 | `sys_may_start`에 `_appendWithholdingNote` 호출 추가 + 새 private 메서드 추가 |
+| `lib/core/notifications/system_reminder_catalog.dart` | 13-27, 28-42, ~396-406 | `payment_report` 그룹 + `sys_payment_report_check` 카탈로그 항목(notifId 1004, business만) 신설 |
+| `lib/core/notifications/event_reminder_prefs.dart` | 5-12 | `freelancer_health_uninsured` 기본값(9:00) 등록 |
+| `lib/core/notifications/reminder_scheduler.dart` | ~269-285 | `checkFreelancerHealthUninsured` 신설, notifId 2006 |
+| `lib/ui/screens/home_screen.dart` | ~273-277 | 프리랜서 전용 분기 — 프로필의 `health_enrolled` 조회 후 새 체크 호출 |
+| `lib/ui/screens/reminder_list_screen.dart` | 40-41, 55-63, 165-166 | 상태 필드·로드·프리랜서 전용 토글 행 추가 |
 
 ## Open Questions
 
-- 마이그레이션 fix-up은 `existing.first`(가장 먼저 조회된 record 리마인더)만 검사한다 — `kind='record'`는 설계상 유저당 최대 1개만 존재하므로 문제 없다고 판단했으나, 확인 부탁.
-- `_appendWithholdingNote`는 `_appendReserveStatus`와 달리 async/try-catch가 없다(DB나 외부 계산에 의존하지 않는 순수 문자열이라 불필요하다고 판단) — 의도한 설계인지 확인 부탁.
+- notifId 1004는 카탈로그 내에서 미사용이었으나, 이벤트형(2000번대) notifId 2006은 커스텀 리마인더와 같은 대역이라 이론상 충돌 가능(KG-8로 로그만 함, 브리프 지시대로 스킴은 안 건드림) — 확인 부탁.
+- `home_screen.dart`에 기존 profile 로드 코드가 별도 메서드(`_loadProfile` 계열)에 있어서 재사용하지 않고 `_loadCurrentMonthIncome` 안에서 `dbService.getProfile()`을 새로 호출했음(가벼운 조회라 판단) — 브리프의 "재사용 우선" 지시와 배치되는지 확인 부탁.
 
 ## Known Gaps Logged
 
-- KG-6c(지급명세서 발급 확인), KG-6d(건강보험 지역가입자 전환 안내) — 이번 스텝 범위 밖, BUILD-LOG에 이미 기록됨.
+- KG-7(`tax_reserve_shortfall`이 리마인더 토글 UI에 없음), KG-8(이벤트형 notifId 대역 충돌 가능성) — BUILD-LOG에 기록, 미수정.

@@ -266,6 +266,26 @@ class ReminderScheduler {
     );
   }
 
+  static const int idFreelancerHealthUninsured = 2006;
+
+  /// 건강보험 미가입 경고 — 프리랜서 전용. 내 정보의 건강보험 가입여부([healthEnrolled])가
+  /// false면 다음날 아침(기본 9시, 리마인더에서 편집 가능) 지연 알림 예약. 가입으로 바뀌면 자동 취소.
+  static Future<void> checkFreelancerHealthUninsured({required bool healthEnrolled}) async {
+    final pref = await resolveEventPref('freelancer_health_uninsured');
+    if (!pref.enabled || healthEnrolled) {
+      await notificationHelper.cancel(idFreelancerHealthUninsured);
+      return;
+    }
+    final now = DateTime.now();
+    final target = DateTime(now.year, now.month, now.day + 1, pref.hour, pref.minute);
+    await notificationHelper.scheduleNotification(
+      id: idFreelancerHealthUninsured,
+      title: '건강보험 지역가입자 등록을 확인해보세요',
+      body: '프리랜서는 건강보험을 스스로 가입해야 해요. 내 정보에서 미가입으로 표시돼 있어요 — 지역가입자 등록을 하셨는지 확인해보세요.',
+      delay: target.difference(now),
+    );
+  }
+
   /// 월말 마감 알림 — 이번 달(또는 다음 달) 말일 20:00 (id=2003).
   static Future<void> scheduleMonthEnd() async {
     final now = DateTime.now();

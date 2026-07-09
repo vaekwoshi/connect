@@ -270,6 +270,11 @@ class _HomeScreenState extends State<HomeScreen> {
         actualReserved: reservedThisMonth,
       );
     }
+    if (!kIsWeb && _notificationsEnabled && _userType == '프리랜서') {
+      final profile = await dbService.getProfile();
+      final healthEnrolled = profile?['health_enrolled'] == true;
+      await ReminderScheduler.checkFreelancerHealthUninsured(healthEnrolled: healthEnrolled);
+    }
     await _checkNjobConversion();
   }
 
