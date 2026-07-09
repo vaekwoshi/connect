@@ -5,16 +5,27 @@
 
 ## Current Status
 
-**Active step:** Step 4a(적립카드 접이식) BUILT & 시각 검증 완료. Step 4b/4c(범례·뷰탭 정리)는 미착수.
-**Last cleared:** Step 4a — 2026-07-10
+**Active step:** Step 4b/4c COMPLETE & 시각 검증 완료 (직장인·프리랜서 양쪽 확인). 원격 push는 별도 보류 항목 — 미실행.
+**Last cleared:** Step 4b/4c — 2026-07-10
 **Pending deploy:** NO (프로덕션 배포/APK 빌드 없음)
 
 ---
 
 ## Step History
 
-### Step 4a — 세금·보험 적립카드 기본 접힘 — COMPLETE (시각 검증 완료)
+### Step 4b/4c — 목록 탭 제거, 결제칩·고정지출 AppBar 통합, 뷰탭+범례 하단바 이동 — COMPLETE
 *Date: 2026-07-10*
+
+`/grilling` 세션으로 사용자와 함께 설계 확정 후 구현. 요지: 캘린더 위 상시 크롬을 최소화해 "달력이 화면을 지배해야 한다"는 요구 충족.
+
+Files changed:
+- `lib/ui/screens/month_list_screen.dart`(신규) — 목록 뷰를 독립 fullscreen 화면으로 추출. 월 라벨("2026. 7") 탭으로 진입.
+- `lib/ui/screens/payment_management_screen.dart`(신규) — 월급날·카드 결제일·고정지출을 한 화면으로 통합. AppBar "관리"(tune) 아이콘으로 진입. `showPayday`(LedgerProfile.showsPaydayChip)로 프리랜서는 월급날 섹션 숨김.
+- `lib/ui/screens/expense_calendar_screen.dart` — `_buildPaymentStrip`/`_showPaydayPicker`/`_showAddCardDialog`/`_showCardOptions`/목록뷰 관련 메서드 전부 제거(위 두 신규 파일로 이관). `_activeView` 3개로 재번호(0=달력,1=분석,2=연간). 뷰탭+범례(색 점만, 고정지출 링크는 관리 화면으로 이관)를 `bottomNavigationBar`로 이동, 달력 탭일 때만 범례 노출. 요약바·적립카드는 달력 탭에서만 노출(`_activeView == 0`).
+
+Verification: `flutter analyze` 신규 이슈 없음(기존 lint 4건만), `flutter test` 53건 통과. **웹 프리뷰 실사용 검증**: 접근성 시맨틱 트리를 실제 PointerEvent로 열어 클릭 내비게이션 확보 → 직장인(월급 섹션 노출)·프리랜서(월급 섹션 숨김, 적립카드 노출) 양쪽에서 가계부 진입→관리 화면→월 목록 화면까지 스크린샷으로 실측 확인.
+Reviewer findings: 셀프 리뷰 — 국소적 이동/추출 위주라 Must Fix 없음.
+Deploy: NO
 
 처음엔 Flutter 웹 캔버스 렌더 때문에 프리뷰 도구로 클릭 내비게이션이 안 되는 줄 알았으나, `flt-semantics-placeholder`를 실제 PointerEvent(pointerdown/up)로 클릭하면 접근성 시맨틱 트리가 정상적으로 열려 이후 모든 버튼에 실제 클릭 내비게이션이 가능함을 확인(단순 DOM `.click()`이 아니라 pointer 이벤트가 필요했음). 이 방법으로 3유형 전환·가계부 진입·적립카드 펼침/접힘까지 전부 스크린샷으로 실측 검증.
 

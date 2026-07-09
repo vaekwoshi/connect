@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/physics.dart';
@@ -9,13 +8,13 @@ import '../../core/data/expense_item.dart';
 import '../../core/data/income_entry.dart';
 import '../../core/data/kr_holidays.dart';
 import '../../core/data/ledger_profile.dart';
-import '../../core/notifications/reminder_scheduler.dart';
 import '../../core/tax_engine/reserve_estimator.dart';
 import '../theme/app_theme.dart';
 import 'my_info_screen.dart';
-import 'recurring_templates_screen.dart';
 import 'recurring_confirm_screen.dart';
 import 'day_entry_screen.dart';
+import 'month_list_screen.dart';
+import 'payment_management_screen.dart';
 
 
 // ── 항목 색상 (파스텔 톤) ──
@@ -101,10 +100,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
 
   final _fmt = NumberFormat('#,###');
 
-  // ── 월급날·카드 결제일 ────────────────────────────────────────────
-  int _paydayDay = 25;
-  List<Map<String, dynamic>> _cardDates = [];
-
   // ── 줌 레벨 파생 ──────────────────────────────────────────────────
   bool get _showAmounts => _zoomLevel >= 2;
 
@@ -147,8 +142,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     final profile = await dbService.getProfile();
     final loadedType = (profile?['user_type'] as String?) ?? '직장인';
     final target = ((profile?['expense_target'] as num?) ?? 0).toInt();
-    final paydayDay = (profile?['pay_day'] as int?) ?? 25;
-    final cards = await dbService.getCardPaymentDates();
     final allExpenses = await dbService.getExpenses();
     final allIncome   = await dbService.getIncomeEntriesForMonth(_year, _month);
     final pendingCount = await dbService.getPendingRecurringCount(_year, _month);
@@ -200,8 +193,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
       setState(() {
         _userType = loadedType;
         _incomeType = LedgerProfile.of(loadedType).defaultIncomeType;
-        _paydayDay = paydayDay;
-        _cardDates = cards;
         _expensesByDay = expMap;
         _incomesByDay  = incMap;
         _dayBatchId    = dayBatch;
@@ -363,16 +354,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     _deselect();
   }
 
-  /// 저장된 incomeType 값 → 표시용 라벨.
-  String _incomeTypeLabel(String type) {
-    switch (type) {
-      case '급여': return '근로소득';
-      case '사업소득': return '사업소득';
-      case '기타소득': return '기타소득';
-      default: return '기타 수익';
-    }
-  }
-
   /// 그 날 기록된 소득의 유형(첫 항목 기준). 없으면 유형별 기본값(직장인·N잡러=근로소득, 프리랜서=사업소득).
   String _incomeTypeOf(String key) {
     final list = _incomesByDay[key];
@@ -516,6 +497,17 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
             TextButton(
               onPressed: _deselect,
               child: Text('취소', style: AppTheme.sans(14, AppTheme.accentColor(context))),
+            )
+          else
+            IconButton(
+              icon: Icon(Icons.tune_rounded, color: ink),
+              tooltip: '결제·고정지출 관리',
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PaymentManagementScreen(showPayday: _profile.showsPaydayChip),
+                ));
+                _load();
+              },
             ),
         ],
       ),
@@ -523,12 +515,9 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
         child: Column(
           children: [
             _buildMonthNav(ink),
-            _buildPaymentStrip(ink, sub),
             AppTheme.hairline(context),
-            _buildViewTabs(ink),
-            AppTheme.hairline(context),
-            if (_activeView < 2) _buildSummaryBar(sub),
-            if (_activeView < 2 && _reserveEstimate != null) _buildReserveCard(ink, sub),
+            if (_activeView == 0) _buildSummaryBar(sub),
+            if (_activeView == 0 && _reserveEstimate != null) _buildReserveCard(ink, sub),
             Expanded(
               child: IndexedStack(
                 index: _activeView,
@@ -537,16 +526,12 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
                   Column(
                     children: [
                       if (_recurringPendingCount > 0) _buildRecurringBanner(),
-                      _buildLegend(),
-                      AppTheme.hairline(context),
                       Expanded(child: _buildCalendar(ink, sub)),
                     ],
                   ),
-                  // 1: 목록
-                  _buildListView(ink, sub),
-                  // 2: 분석
+                  // 1: 분석
                   _buildAnalysisView(ink, sub),
-                  // 3: 연간
+                  // 2: 연간
                   _buildAnnualView(ink, sub),
                 ],
               ),
@@ -554,312 +539,8 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
           ],
         ),
       ),
+      bottomNavigationBar: _buildBottomBar(ink, sub),
     );
-  }
-
-  // ── 월급날 · 카드 결제일 스트립 ──────────────────────────────────
-
-  Widget _buildPaymentStrip(Color ink, Color sub) {
-    final accent = AppTheme.accentColor(context);
-    final line   = AppTheme.line(context);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
-        children: [
-          // 월급날 — 고정 급여가 있는 직장인·N잡러만. 프리랜서는 해당 없음.
-          if (_profile.showsPaydayChip)
-            GestureDetector(
-              onTap: _showPaydayPicker,
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.1),
-                  border: Border.all(color: accent.withValues(alpha: 0.35)),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.payments_outlined, size: 13, color: accent),
-                  const SizedBox(width: 5),
-                  Text('월급 $_paydayDay일',
-                      style: AppTheme.sans(12, accent, weight: FontWeight.w600)),
-                ]),
-              ),
-            ),
-          ..._cardDates.map((card) => Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: GestureDetector(
-              onTap: () => _showCardOptions(card),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  border: Border.all(color: line),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.credit_card_rounded, size: 13, color: sub),
-                  const SizedBox(width: 5),
-                  Text('${card['name']} ${card['day']}일',
-                      style: AppTheme.sans(12, ink, weight: FontWeight.w500)),
-                ]),
-              ),
-            ),
-          )),
-          Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: GestureDetector(
-              onTap: _showAddCardDialog,
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  border: Border.all(color: line),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.add_rounded, size: 14, color: sub),
-                  const SizedBox(width: 4),
-                  Text('카드 추가', style: AppTheme.sans(12, sub)),
-                ]),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showPaydayPicker() async {
-    final ink    = AppTheme.ink(context);
-    final accent = AppTheme.accentColor(context);
-    final bg     = AppTheme.backgroundColor(context);
-    final line   = AppTheme.line(context);
-    final sub    = AppTheme.inkSecondary(context);
-
-    final confirmed = await showDialog<int>(
-      context: context,
-      builder: (ctx) {
-        int current = _paydayDay;
-        return StatefulBuilder(builder: (ctx, setSt) {
-          return AlertDialog(
-            backgroundColor: bg,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(4),
-              side: BorderSide(color: line),
-            ),
-            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-            contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            title: Text('월급날 설정', style: AppTheme.serif(17, ink)),
-            content: SizedBox(
-              height: 120,
-              child: ListWheelScrollView.useDelegate(
-                itemExtent: 36,
-                onSelectedItemChanged: (i) => setSt(() => current = i + 1),
-                controller: FixedExtentScrollController(initialItem: _paydayDay - 1),
-                childDelegate: ListWheelChildBuilderDelegate(
-                  childCount: 31,
-                  builder: (_, i) => Center(
-                    child: Text('${i + 1}일',
-                        style: AppTheme.sans(
-                            16,
-                            i + 1 == current ? ink : AppTheme.inkTertiary(ctx),
-                            weight: i + 1 == current
-                                ? FontWeight.w700
-                                : FontWeight.w400)),
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 0, 8, 12),
-                  child: Text('취소', style: AppTheme.sans(14, sub)),
-                ),
-              ),
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx, current),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
-                  child: Text('저장',
-                      style: AppTheme.sans(14, accent, weight: FontWeight.w700)),
-                ),
-              ),
-            ],
-          );
-        });
-      },
-    );
-
-    if (confirmed == null || !mounted) return;
-    final profile = await dbService.getProfile() ?? {};
-    await dbService.saveProfile({...profile, 'pay_day': confirmed});
-    if (mounted) setState(() => _paydayDay = confirmed);
-  }
-
-  Future<void> _showAddCardDialog() async {
-    final nameCtrl = TextEditingController();
-    int selectedDay = 1;
-    final ink    = AppTheme.ink(context);
-    final accent = AppTheme.accentColor(context);
-    final bg     = AppTheme.backgroundColor(context);
-    final line   = AppTheme.line(context);
-    final sub    = AppTheme.inkSecondary(context);
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        int currentDay = selectedDay;
-        return StatefulBuilder(builder: (ctx, setSt) {
-          return AlertDialog(
-            backgroundColor: bg,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(4),
-              side: BorderSide(color: line),
-            ),
-            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-            contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            title: Text('카드 결제일 추가', style: AppTheme.serif(17, ink)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('카드 이름',
-                    style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: nameCtrl,
-                  autofocus: true,
-                  style: AppTheme.sans(15, ink),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: '예: 신한카드',
-                    hintStyle: AppTheme.sans(15, AppTheme.inkTertiary(ctx)),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                    border: UnderlineInputBorder(
-                        borderSide: BorderSide(color: line)),
-                    enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: line)),
-                    focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: accent, width: 1.5)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text('결제일',
-                    style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                SizedBox(
-                  height: 100,
-                  child: ListWheelScrollView.useDelegate(
-                    itemExtent: 32,
-                    onSelectedItemChanged: (i) =>
-                        setSt(() => currentDay = i + 1),
-                    controller:
-                        FixedExtentScrollController(initialItem: currentDay - 1),
-                    childDelegate: ListWheelChildBuilderDelegate(
-                      childCount: 31,
-                      builder: (_, i) => Center(
-                        child: Text('${i + 1}일',
-                            style: AppTheme.sans(
-                                14,
-                                i + 1 == currentDay
-                                    ? ink
-                                    : AppTheme.inkTertiary(ctx),
-                                weight: i + 1 == currentDay
-                                    ? FontWeight.w700
-                                    : FontWeight.w400)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              GestureDetector(
-                onTap: () => Navigator.pop(ctx),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 0, 8, 12),
-                  child: Text('취소', style: AppTheme.sans(14, sub)),
-                ),
-              ),
-              GestureDetector(
-                onTap: () {
-                  if (nameCtrl.text.trim().isEmpty) return;
-                  selectedDay = currentDay;
-                  Navigator.pop(ctx, true);
-                },
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
-                  child: Text('추가',
-                      style:
-                          AppTheme.sans(14, accent, weight: FontWeight.w700)),
-                ),
-              ),
-            ],
-          );
-        });
-      },
-    );
-
-    final name = nameCtrl.text.trim();
-    nameCtrl.dispose();
-    if (confirmed != true || name.isEmpty || !mounted) return;
-
-    await dbService.addCardPaymentDate(name, selectedDay);
-    final updated = await dbService.getCardPaymentDates();
-    if (!kIsWeb) await ReminderScheduler.scheduleCardPayments(updated);
-    if (mounted) setState(() => _cardDates = updated);
-  }
-
-  Future<void> _showCardOptions(Map<String, dynamic> card) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        final ink  = AppTheme.ink(ctx);
-        final bg   = AppTheme.backgroundColor(ctx);
-        final line = AppTheme.line(ctx);
-        final sub  = AppTheme.inkSecondary(ctx);
-        return AlertDialog(
-          backgroundColor: bg,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(4),
-            side: BorderSide(color: line),
-          ),
-          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-          contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          title: Text('${card['name']} ${card['day']}일',
-              style: AppTheme.serif(17, ink)),
-          content: GestureDetector(
-            onTap: () => Navigator.pop(ctx, true),
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text('삭제',
-                  style: AppTheme.sans(15, AppTheme.colorDanger,
-                      weight: FontWeight.w600)),
-            ),
-          ),
-          actions: [
-            GestureDetector(
-              onTap: () => Navigator.pop(ctx),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
-                child: Text('취소', style: AppTheme.sans(14, sub)),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true || !mounted) return;
-    await dbService.deleteCardPaymentDate(card['id'] as int);
-    final updated = await dbService.getCardPaymentDates();
-    if (!kIsWeb) await ReminderScheduler.scheduleCardPayments(updated);
-    if (mounted) setState(() => _cardDates = updated);
   }
 
   /// 고정 지출 미확인 배너
@@ -922,7 +603,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
   /// 색 점 범례 — 수익 + 결제수단 3종 + 고정지출 링크
   Widget _buildLegend() {
     final sub = AppTheme.inkSecondary(context);
-    final accent = AppTheme.accentColor(context);
     Widget dot(Color c, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 7, height: 7, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
           const SizedBox(width: 4),
@@ -930,41 +610,35 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
         ]);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 7),
-      child: Row(children: [
-        Wrap(spacing: 10, runSpacing: 4, children: [
-          dot(_incomeColor,   '수익'),
-          dot(_pmCreditColor, '신용카드'),
-          dot(_pmDebitColor,  '체크/현금'),
-          dot(_pmOtherColor,  '기타'),
-        ]),
-        const Spacer(),
-        GestureDetector(
-          onTap: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const RecurringTemplatesScreen()),
-            );
-            _load();
-          },
-          behavior: HitTestBehavior.opaque,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text('고정지출', style: AppTheme.sans(11, accent, weight: FontWeight.w600)),
-              const SizedBox(width: 2),
-              Icon(Icons.arrow_forward_ios_rounded, size: 10, color: accent),
-            ]),
-          ),
-        ),
+      child: Wrap(spacing: 10, runSpacing: 4, children: [
+        dot(_incomeColor,   '수익'),
+        dot(_pmCreditColor, '신용카드'),
+        dot(_pmDebitColor,  '체크/현금'),
+        dot(_pmOtherColor,  '기타'),
       ]),
     );
   }
 
+  Widget _buildBottomBar(Color ink, Color sub) {
+    return SizedBox(
+      height: _activeView == 0 ? 84 : 54,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          AppTheme.hairline(context),
+          if (_activeView == 0) _buildLegend(),
+          _buildViewTabs(ink),
+        ],
+      ),
+    );
+  }
+
   Widget _buildViewTabs(Color ink) {
-    const labels = ['달력', '목록', '분석', '연간'];
+    const labels = ['달력', '분석', '연간'];
     final accent = AppTheme.accentColor(context);
     final sub = AppTheme.inkSecondary(context);
     return Row(
-      children: List.generate(4, (i) {
+      children: List.generate(3, (i) {
         final selected = _activeView == i;
         return Expanded(
           child: GestureDetector(
@@ -1012,7 +686,22 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
               _load();
             },
           ),
-          Text('$_year. $_month', style: AppTheme.sans(18, ink, weight: FontWeight.w700)),
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => MonthListScreen(
+                year: _year,
+                month: _month,
+                expensesByDay: _expensesByDay,
+                incomesByDay: _incomesByDay,
+              ),
+            )),
+            behavior: HitTestBehavior.opaque,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text('$_year. $_month', style: AppTheme.sans(18, ink, weight: FontWeight.w700)),
+              const SizedBox(width: 4),
+              Icon(Icons.expand_more_rounded, size: 18, color: AppTheme.inkSecondary(context)),
+            ]),
+          ),
           IconButton(
             icon: Icon(Icons.chevron_right_rounded, color: ink, size: 26),
             onPressed: () {
@@ -1731,159 +1420,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
           width: 0.5,
         ),
       ),
-    );
-  }
-
-  // ── 목록 뷰 ──────────────────────────────────────────────────────
-
-  Widget _buildListView(Color ink, Color sub) {
-    final allUniqueExp = _expensesByDay.values.expand((l) => l).toSet().toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-    final allUniqueInc = _incomesByDay.values.expand((l) => l).toSet().toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-
-    // 날짜 키 set (합집합)
-    final dayKeys = <String>{
-      ...allUniqueExp.map((e) => _key(e.date)),
-      ...allUniqueInc.map((e) => _key(e.date)),
-    };
-    final sortedDays = dayKeys.toList()..sort((a, b) => b.compareTo(a));
-
-    if (sortedDays.isEmpty) {
-      return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.receipt_long_outlined, size: 36, color: AppTheme.inkTertiary(context)),
-          const SizedBox(height: 12),
-          Text('이번 달 기록이 없어요',
-              style: AppTheme.sans(15, AppTheme.inkTertiary(context), weight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          Text('달력에서 날짜를 탭해 입력하세요.',
-              style: AppTheme.sans(13, AppTheme.inkTertiary(context))),
-        ]),
-      );
-    }
-
-    final tert = AppTheme.inkTertiary(context);
-    const wd = ['월', '화', '수', '목', '금', '토', '일'];
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-      itemCount: sortedDays.length,
-      itemBuilder: (context, idx) {
-        final key = sortedDays[idx];
-        final day = DateTime.parse(key);
-        final exps = allUniqueExp.where((e) => _key(e.date) == key).toList();
-        final incs = allUniqueInc.where((e) => _key(e.date) == key).toList();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (idx > 0) const SizedBox(height: 16),
-            // 날짜 헤더
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  Text('${day.month}월 ${day.day}일',
-                      style: AppTheme.sans(13, ink, weight: FontWeight.w700)),
-                  const SizedBox(width: 6),
-                  Text('(${wd[day.weekday - 1]})',
-                      style: AppTheme.sans(12, tert)),
-                ],
-              ),
-            ),
-            AppTheme.hairline(context),
-            for (final inc in incs) _listIncomeRow(inc, ink, sub, tert),
-            for (final exp in exps) _listExpenseRow(exp, ink, sub, tert),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _listIncomeRow(IncomeEntry entry, Color ink, Color sub, Color tert) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 11),
-      child: Row(
-        children: [
-          Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(
-              color: _incomeColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: const Icon(Icons.add_rounded, size: 16, color: _incomeColor),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Row(
-              children: [
-                Text(_incomeTypeLabel(entry.incomeType),
-                    style: AppTheme.sans(14, ink, weight: FontWeight.w600)),
-                if (entry.isWithheld) ...[
-                  const SizedBox(width: 6),
-                  _miniTag(entry.incomeType == '기타소득' ? '8.8%' : '3.3%', sub),
-                ],
-              ],
-            ),
-          ),
-          Text('+${_fmt.format(entry.amount)}원',
-              style: AppTheme.sans(14, _incomeColor, weight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-
-  Widget _listExpenseRow(ExpenseItem exp, Color ink, Color sub, Color tert) {
-    final cat = expenseCategoryById(exp.category);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 11),
-      child: Row(
-        children: [
-          Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(
-              color: cat.color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Icon(cat.icon, size: 15, color: cat.color),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(cat.label,
-                        style: AppTheme.sans(14, ink, weight: FontWeight.w600)),
-                    if (exp.isBusiness) ...[
-                      const SizedBox(width: 6),
-                      _miniTag('사업경비', sub),
-                    ],
-                  ],
-                ),
-                Text(exp.paymentMethod,
-                    style: AppTheme.sans(12, tert)),
-              ],
-            ),
-          ),
-          Text('-${_fmt.format(exp.amount)}원',
-              style: AppTheme.sans(14, sub, weight: FontWeight.w700)),
-        ],
-      ),
-    );
-  }
-
-  /// 목록의 사업경비/원천징수 표시용 소형 태그.
-  Widget _miniTag(String text, Color sub) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-      decoration: BoxDecoration(
-        border: Border.all(color: AppTheme.line(context)),
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Text(text, style: AppTheme.sans(10, sub, weight: FontWeight.w600)),
     );
   }
 
