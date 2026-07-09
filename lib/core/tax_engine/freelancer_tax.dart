@@ -16,6 +16,7 @@ class FreelancerTaxCalculator {
     double freelancerHealthInsurance = 0.0, // 건강보험 지역가입자 연간 납부액 (전액 소득공제)
     int disabledDependentCount = 0,    // 장애인 부양가족 수 (추가공제 200만/명)
     bool hasSelfDisability = false,    // 본인 장애인 여부
+    bool useStandardExpenseRate = false, // true면 단순경비율 대신 기준경비율 적용(적립 범위 산출용)
   }) {
     // 0. 입력값 방어 코드
     final months = inputMonths < 1 ? 1 : (inputMonths > 12 ? 12 : inputMonths);
@@ -30,14 +31,17 @@ class FreelancerTaxCalculator {
     if (simpleExcessRate == 0.0) {
       simpleExcessRate = simpleBaseRate;
     }
+    final double standardExpenseRate = (occupation?.standardRate ?? 0.0) / 100.0;
     // 2. 미래 예측 (A안 연환산 연소득 추정)
     // 공식: 누적 수입 / 입력 개월 수 * 12개월
     final double annualEstimatedIncome = (income / months) * 12;
 
-    // 3. 연간 필요경비 산출 (단순경비율 기준)
+    // 3. 연간 필요경비 산출 (단순경비율 기준, useStandardExpenseRate이면 기준경비율)
     // 단순경비율 적용 시, 수입 4,000만 원 이하 분은 기본율, 초과분은 초과율 적용
     double estimatedExpense = 0.0;
-    if (annualEstimatedIncome <= 40000000) {
+    if (useStandardExpenseRate) {
+      estimatedExpense = annualEstimatedIncome * standardExpenseRate;
+    } else if (annualEstimatedIncome <= 40000000) {
       estimatedExpense = annualEstimatedIncome * simpleBaseRate;
     } else {
       estimatedExpense = (40000000 * simpleBaseRate) +
@@ -182,6 +186,54 @@ class FreelancerTaxCalculator {
       rentTaxCredit: rentTaxCredit,
       healthInsuranceDeduction: freelancerHealthInsurance,
     );
+  }
+
+  /// 단순경비율/기준경비율 두 가정을 각각 계산해 세금 적립 최소~최대 범위를 낸다.
+  /// (가계부 적립 카드용 — 어느 쪽이 더 큰지는 업종마다 달라 직접 계산해 정렬한다.)
+  static ({FreelancerTaxResult min, FreelancerTaxResult max}) calculateTaxRange({
+    required double accumulatedIncome,
+    required int inputMonths,
+    required int allowanceCount,
+    required String occupationCode,
+    bool isBookkeeping = false,
+    double yellowUmbrellaPayment = 0.0,
+    double monthlyRent = 0.0,
+    bool isHomeless = false,
+    double freelancerHealthInsurance = 0.0,
+    int disabledDependentCount = 0,
+    bool hasSelfDisability = false,
+  }) {
+    final simple = calculateTaxSimulation(
+      accumulatedIncome: accumulatedIncome,
+      inputMonths: inputMonths,
+      allowanceCount: allowanceCount,
+      occupationCode: occupationCode,
+      isBookkeeping: isBookkeeping,
+      yellowUmbrellaPayment: yellowUmbrellaPayment,
+      monthlyRent: monthlyRent,
+      isHomeless: isHomeless,
+      freelancerHealthInsurance: freelancerHealthInsurance,
+      disabledDependentCount: disabledDependentCount,
+      hasSelfDisability: hasSelfDisability,
+      useStandardExpenseRate: false,
+    );
+    final standard = calculateTaxSimulation(
+      accumulatedIncome: accumulatedIncome,
+      inputMonths: inputMonths,
+      allowanceCount: allowanceCount,
+      occupationCode: occupationCode,
+      isBookkeeping: isBookkeeping,
+      yellowUmbrellaPayment: yellowUmbrellaPayment,
+      monthlyRent: monthlyRent,
+      isHomeless: isHomeless,
+      freelancerHealthInsurance: freelancerHealthInsurance,
+      disabledDependentCount: disabledDependentCount,
+      hasSelfDisability: hasSelfDisability,
+      useStandardExpenseRate: true,
+    );
+    final lower = simple.annualTotalTax <= standard.annualTotalTax ? simple : standard;
+    final higher = simple.annualTotalTax <= standard.annualTotalTax ? standard : simple;
+    return (min: lower, max: higher);
   }
 }
 

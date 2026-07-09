@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 /// 주택연금(역모기지) 예상 월지급금 참고 추정기.
 /// HF 공시 종신·정액형 참고 데이터포인트(3억/60세=63만, 3억/70세=90만,
@@ -206,6 +207,7 @@ class _HousingPensionScreenState extends State<HousingPensionScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

@@ -13,6 +13,9 @@ abstract class DatabaseService {
   Future<void> initDatabase();
   Future<void> saveProfile(Map<String, dynamic> profile);
   Future<Map<String, dynamic>?> getProfile();
+  // 유형별(직장인/N잡러/프리랜서) 독립 저장 — 예상연봉·지출목표는 유형 전환 시 서로 섞이면 안 됨.
+  Future<void> setProfileTypeValues(String userType, {double? grossIncome, double? expenseTarget});
+  Future<Map<String, double>> getProfileTypeValues(String userType);
   Future<void> insertExpense(ExpenseItem item);
   Future<List<ExpenseItem>> getExpenses();
   Future<void> deleteExpense(String id);
@@ -154,7 +157,8 @@ class SqfliteDatabaseHelper implements DatabaseService {
       category TEXT NOT NULL DEFAULT '기타',
       payment_method TEXT NOT NULL DEFAULT '기타',
       day_of_month INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER DEFAULT 0
+      sort_order INTEGER DEFAULT 0,
+      is_business INTEGER DEFAULT 0
     )
   ''';
 
@@ -198,6 +202,14 @@ class SqfliteDatabaseHelper implements DatabaseService {
     )
   ''';
 
+  static const String _profileTypeValuesTableSql = '''
+    CREATE TABLE IF NOT EXISTS profile_type_values (
+      user_type TEXT PRIMARY KEY,
+      gross_income REAL DEFAULT 0,
+      expense_target REAL DEFAULT 0
+    )
+  ''';
+
   @override
   Future<void> initDatabase() async {
     if (_db != null) return;
@@ -207,7 +219,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
 
     _db = await openDatabase(
       path,
-      version: 28,
+      version: 32,
       onCreate: (db, version) async {
         // 프로필 테이블 생성
         await db.execute('''
@@ -239,7 +251,15 @@ class SqfliteDatabaseHelper implements DatabaseService {
             is_sme_employee INTEGER,
             sme_start_year INTEGER,
             pay_day INTEGER DEFAULT 25,
-            type_identified INTEGER DEFAULT 0
+            type_identified INTEGER DEFAULT 0,
+            owns_car INTEGER,
+            owns_house INTEGER,
+            occupation_code TEXT,
+            property_value REAL,
+            pension_enrolled INTEGER DEFAULT 0,
+            health_enrolled INTEGER DEFAULT 0,
+            employment_enrolled INTEGER DEFAULT 0,
+            industrial_accident_enrolled INTEGER DEFAULT 0
           )
         ''');
         // 지출 내역 테이블 생성 (민감 정보는 텍스트 암호화 상태로 저장)
@@ -251,7 +271,8 @@ class SqfliteDatabaseHelper implements DatabaseService {
             amount TEXT,
             content TEXT,
             category TEXT,
-            payment_method TEXT
+            payment_method TEXT,
+            is_business INTEGER DEFAULT 0
           )
         ''');
         // 세무 기록부 테이블 생성
@@ -299,7 +320,8 @@ class SqfliteDatabaseHelper implements DatabaseService {
             end_date TEXT,
             amount TEXT,
             memo TEXT,
-            income_type TEXT
+            income_type TEXT,
+            is_withheld INTEGER DEFAULT 0
           )
         ''');
         // ②진단 결과(가상 신고서 draft) — user_type별 1건
@@ -336,6 +358,8 @@ class SqfliteDatabaseHelper implements DatabaseService {
         await db.execute(_appStateTableSql);
         // 이벤트 트리거형 기본 제공 알림 설정 (v28)
         await db.execute(_eventReminderPrefsTableSql);
+        // 유형별 독립 프로필 값 (v30)
+        await db.execute(_profileTypeValuesTableSql);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -561,6 +585,50 @@ class SqfliteDatabaseHelper implements DatabaseService {
             await db.execute(_eventReminderPrefsTableSql);
           } catch (e) {}
         }
+        if (oldVersion < 29) {
+          try {
+            await db.execute('ALTER TABLE user_profile ADD COLUMN owns_car INTEGER');
+            await db.execute('ALTER TABLE user_profile ADD COLUMN owns_house INTEGER');
+          } catch (e) {}
+        }
+        if (oldVersion < 30) {
+          try {
+            await db.execute(_profileTypeValuesTableSql);
+          } catch (e) {}
+        }
+        // 프리랜서·N잡러 사업경비 인정 / 3.3% 원천징수 사업소득 구분 (v31)
+        if (oldVersion < 31) {
+          try {
+            await db.execute('ALTER TABLE expenses ADD COLUMN is_business INTEGER DEFAULT 0');
+          } catch (e) {}
+          try {
+            await db.execute('ALTER TABLE income_entries ADD COLUMN is_withheld INTEGER DEFAULT 0');
+          } catch (e) {}
+          try {
+            await db.execute('ALTER TABLE recurring_templates ADD COLUMN is_business INTEGER DEFAULT 0');
+          } catch (e) {}
+        }
+        // 프리랜서·N잡러 세금·4대보험 적립 추정용 프로필 필드 (v32)
+        if (oldVersion < 32) {
+          try {
+            await db.execute('ALTER TABLE user_profile ADD COLUMN occupation_code TEXT');
+          } catch (e) {}
+          try {
+            await db.execute('ALTER TABLE user_profile ADD COLUMN property_value REAL');
+          } catch (e) {}
+          try {
+            await db.execute('ALTER TABLE user_profile ADD COLUMN pension_enrolled INTEGER DEFAULT 0');
+          } catch (e) {}
+          try {
+            await db.execute('ALTER TABLE user_profile ADD COLUMN health_enrolled INTEGER DEFAULT 0');
+          } catch (e) {}
+          try {
+            await db.execute('ALTER TABLE user_profile ADD COLUMN employment_enrolled INTEGER DEFAULT 0');
+          } catch (e) {}
+          try {
+            await db.execute('ALTER TABLE user_profile ADD COLUMN industrial_accident_enrolled INTEGER DEFAULT 0');
+          } catch (e) {}
+        }
       },
     );
   }
@@ -602,6 +670,14 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'sme_start_year': profile['sme_start_year'],
         'pay_day': profile['pay_day'] ?? 25,
         'type_identified': profile['type_identified'] == true ? 1 : 0,
+        'owns_car': profile['owns_car'] == null ? null : (profile['owns_car'] == true ? 1 : 0),
+        'owns_house': profile['owns_house'] == null ? null : (profile['owns_house'] == true ? 1 : 0),
+        'occupation_code': profile['occupation_code'],
+        'property_value': profile['property_value'],
+        'pension_enrolled': profile['pension_enrolled'] == true ? 1 : 0,
+        'health_enrolled': profile['health_enrolled'] == true ? 1 : 0,
+        'employment_enrolled': profile['employment_enrolled'] == true ? 1 : 0,
+        'industrial_accident_enrolled': profile['industrial_accident_enrolled'] == true ? 1 : 0,
       });
     });
   }
@@ -645,6 +721,43 @@ class SqfliteDatabaseHelper implements DatabaseService {
       'sme_start_year': map['sme_start_year'] as int?,
       'pay_day': map['pay_day'] as int? ?? 25,
       'type_identified': map['type_identified'] == 1,
+      // null(마이그레이션 이전 기존 사용자, 미입력)은 그대로 null 유지 — 알림 필터링 쪽에서 "?? true"로 기본값 처리.
+      'owns_car': map['owns_car'] == null ? null : map['owns_car'] == 1,
+      'owns_house': map['owns_house'] == null ? null : map['owns_house'] == 1,
+      'occupation_code': map['occupation_code'] as String?,
+      'property_value': map['property_value'],
+      'pension_enrolled': map['pension_enrolled'] == 1,
+      'health_enrolled': map['health_enrolled'] == 1,
+      'employment_enrolled': map['employment_enrolled'] == 1,
+      'industrial_accident_enrolled': map['industrial_accident_enrolled'] == 1,
+    };
+  }
+
+  @override
+  Future<void> setProfileTypeValues(String userType, {double? grossIncome, double? expenseTarget}) async {
+    final db = _db;
+    if (db == null) return;
+    final existing = await getProfileTypeValues(userType);
+    await db.insert(
+      'profile_type_values',
+      {
+        'user_type': userType,
+        'gross_income': grossIncome ?? existing['gross_income'],
+        'expense_target': expenseTarget ?? existing['expense_target'],
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  @override
+  Future<Map<String, double>> getProfileTypeValues(String userType) async {
+    final db = _db;
+    if (db == null) return {'gross_income': 0.0, 'expense_target': 0.0};
+    final rows = await db.query('profile_type_values', where: 'user_type = ?', whereArgs: [userType]);
+    if (rows.isEmpty) return {'gross_income': 0.0, 'expense_target': 0.0};
+    return {
+      'gross_income': (rows.first['gross_income'] as num?)?.toDouble() ?? 0.0,
+      'expense_target': (rows.first['expense_target'] as num?)?.toDouble() ?? 0.0,
     };
   }
 
@@ -682,6 +795,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'content': encryptedContent,
         'category': encryptedCategory,
         'payment_method': encryptedPayment,
+        'is_business': item.isBusiness ? 1 : 0,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -719,6 +833,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
           content: decryptedContent,
           category: decryptedCategory,
           paymentMethod: paymentMethod,
+          isBusiness: (map['is_business'] as int?) == 1,
         ));
       } catch (e) {
         // 복호화 실패 등 예외 시 무시
@@ -751,6 +866,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'content': encryptedContent,
         'category': encryptedCategory,
         'payment_method': encryptedPayment,
+        'is_business': item.isBusiness ? 1 : 0,
       },
       where: 'id = ?',
       whereArgs: [item.id],
@@ -770,6 +886,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'amount': CryptoHelper.encrypt(entry.amount.toString()),
         'memo': CryptoHelper.encrypt(entry.memo),
         'income_type': CryptoHelper.encrypt(entry.incomeType),
+        'is_withheld': entry.isWithheld ? 1 : 0,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -794,6 +911,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
           amount: int.parse(CryptoHelper.decrypt(row['amount'] as String)),
           memo: CryptoHelper.decrypt(row['memo'] as String),
           incomeType: CryptoHelper.decrypt(row['income_type'] as String),
+          isWithheld: (row['is_withheld'] as int?) == 1,
         ));
       } catch (_) {}
     }
@@ -813,6 +931,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
         'amount': CryptoHelper.encrypt(entry.amount.toString()),
         'memo': CryptoHelper.encrypt(entry.memo),
         'income_type': CryptoHelper.encrypt(entry.incomeType),
+        'is_withheld': entry.isWithheld ? 1 : 0,
       },
       where: 'id = ?',
       whereArgs: [entry.id],
@@ -1191,6 +1310,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
     paymentMethod: row['payment_method'] as String? ?? '기타',
     dayOfMonth: row['day_of_month'] as int? ?? 1,
     sortOrder: row['sort_order'] as int? ?? 0,
+    isBusiness: (row['is_business'] as int?) == 1,
   );
 
   @override
@@ -1204,6 +1324,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
       'payment_method': t.paymentMethod,
       'day_of_month': t.dayOfMonth,
       'sort_order': t.sortOrder,
+      'is_business': t.isBusiness ? 1 : 0,
     });
   }
 
@@ -1226,6 +1347,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
       'payment_method': t.paymentMethod,
       'day_of_month': t.dayOfMonth,
       'sort_order': t.sortOrder,
+      'is_business': t.isBusiness ? 1 : 0,
     }, where: 'id = ?', whereArgs: [t.id]);
   }
 
@@ -1405,6 +1527,22 @@ class InMemoryDatabaseHelper implements DatabaseService {
     return _profile;
   }
 
+  final Map<String, Map<String, double>> _profileTypeValues = {};
+
+  @override
+  Future<void> setProfileTypeValues(String userType, {double? grossIncome, double? expenseTarget}) async {
+    final existing = _profileTypeValues[userType] ?? {'gross_income': 0.0, 'expense_target': 0.0};
+    _profileTypeValues[userType] = {
+      'gross_income': grossIncome ?? existing['gross_income']!,
+      'expense_target': expenseTarget ?? existing['expense_target']!,
+    };
+  }
+
+  @override
+  Future<Map<String, double>> getProfileTypeValues(String userType) async {
+    return _profileTypeValues[userType] ?? {'gross_income': 0.0, 'expense_target': 0.0};
+  }
+
   @override
   Future<void> insertTaxRecord(Map<String, dynamic> record) async {
     if (_isClosed) return;
@@ -1436,6 +1574,7 @@ class InMemoryDatabaseHelper implements DatabaseService {
       'content': encryptedContent,
       'category': encryptedCategory,
       'payment_method': encryptedPayment,
+      'is_business': item.isBusiness,
     };
   }
 
@@ -1463,6 +1602,7 @@ class InMemoryDatabaseHelper implements DatabaseService {
         content: decryptedContent,
         category: decryptedCategory,
         paymentMethod: paymentMethod,
+        isBusiness: raw['is_business'] as bool? ?? false,
       ));
     }
     return list;

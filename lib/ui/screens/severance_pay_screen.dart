@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 /// 퇴직금 계산기
 /// 공식: 평균임금 × 30 × (재직일수 ÷ 365)
@@ -310,6 +311,7 @@ class _SeverancePayScreenState extends State<SeverancePayScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

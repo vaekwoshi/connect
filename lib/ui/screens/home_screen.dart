@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 
 import '../theme/app_theme.dart';
 import '../components/reminder_card.dart';
-import 'freelancer_book_screen.dart';
 import 'onboarding_screen.dart';
 import 'profile_input_screen.dart';
 import 'year_end_tax_screen.dart';
@@ -14,6 +13,7 @@ import 'tax_simulator_screen.dart';
 import 'tax_persona_question_screen.dart';
 import 'financial_income_screen.dart';
 import 'expense_calendar_screen.dart';
+import 'annual_backfill_screen.dart';
 import 'tax_tools_screen.dart';
 import 'settings_screen.dart';
 import 'benefit_screen.dart';
@@ -24,6 +24,7 @@ import 'notification_inbox_screen.dart';
 import '../../core/data/tax_tips.dart';
 import '../../core/data/db_helper.dart';
 import '../../core/tax_engine/employee_tax.dart';
+import '../../core/tax_engine/reserve_estimator.dart';
 import '../../core/security/notification_helper.dart';
 import '../../core/notifications/reminder_scheduler.dart';
 
@@ -60,10 +61,15 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isMonthlyRent = false;
   bool _isTypeIdentified = false;   // 유형 파악 완료 여부 (온보딩 1단계)
   bool _isProfileCompleted = false; // 프로필 완성 여부 (온보딩 2단계)
+  bool _showBackfillPrompt = false; // 연중 가입 — 지난 달 소급 입력 유도 배너
+  Set<String> _hiddenBannerIds = {}; // X로 닫은 배너 카드(30일간 숨김)
   double _decidedTax = 0.0; // 결정세액 (연말정산 진단 데이터)
   double _grossIncome = 0.0; // 연소득(연봉) (연말정산 진단 데이터)
   double _laborIncome = 0.0; // 이번 달 근로소득(급여) — N잡러 수입 분리
   double _otherIncome = 0.0; // 이번 달 기타 수익(프리랜서·부수입 등) — N잡러 수입 분리
+  double _otherIncomeGrossEstimate = 0.0; // 기타 수익(사업/기타소득) 원천징수 역산 세전 추정 — 근로소득은 간이세액표 기반이라 역산 불가, 제외
+  bool _showGrossIncome = false; // 프리랜서 헤드라인 탭-세전 보기 토글
+  bool _showOtherIncomeGross = false; // N잡러 "기타 수익" 칩 탭-세전 보기 토글
   double _expenseTarget = 0.0; // 이번 달 지출 목표
   int _payDay = 25; // 직장인·N잡 월급여일 (1~31, 알림 넛지 기준)
   bool _notificationsEnabled = true; // 세금·가계부 알림 마스터 on/off (reminder_settings 'master'에 영속)
@@ -117,8 +123,8 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// 이번 달·유형에 맞는 절세 팁(회전용 최대 5장).
-  List<TaxTip> _currentTips() => taxTipsFor(_userType, DateTime.now().month, limit: 5);
+  /// 이번 달·유형에 맞는 절세 팁(회전용 최대 2장 — N잡러는 전체 7개 팁에 다 해당돼 과다 노출 방지).
+  List<TaxTip> _currentTips() => taxTipsFor(_userType, DateTime.now().month, limit: 2);
 
   Future<void> _loadDataFromDB() async {
     try {
@@ -149,20 +155,14 @@ class _HomeScreenState extends State<HomeScreen> {
             _yellowUmbrellaController.text = _numberFormat.format(yellowUmbrella.toInt());
           }
 
-          final expenseTarget = profile['expense_target'] as double? ?? 0.0;
-          if (expenseTarget > 0) {
-            _expenseTarget = expenseTarget;
-            _savingGoalController.text = _numberFormat.format(expenseTarget.toInt());
-          }
-
           _decidedTax = profile['decided_tax'] as double? ?? 0.0;
-          _grossIncome = profile['gross_income'] as double? ?? 0.0;
           _payDay = (profile['pay_day'] as int? ?? 25).clamp(1, 31);
           _isTypeIdentified = profile['type_identified'] == true;
           _isProfileCompleted = true;
           // 기존 사용자 호환: 프로필이 있으면 유형 파악 완료로 처리
           if (!_isTypeIdentified) _isTypeIdentified = true;
         });
+        await _loadTypeValues(_userType);
       }
     } catch (e) {
       // 핫 리로드 과도기 중 DB 필드 불일치 방어 — 운영 중 지속 실패면 로그로 드러나게.
@@ -182,6 +182,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _calculateTax();
     _refreshReminders();
     _refreshUnreadCount();
+    _checkBackfillPrompt();
+    _loadHiddenBanners();
   }
 
   Future<void> _refreshUnreadCount() async {
@@ -228,20 +230,166 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     // 근로소득(급여) / 기타 수익 분리 — N잡러 수입 카드용 (income_entries = SSOT)
     final entries = await dbService.getIncomeEntriesForMonth(now.year, now.month);
-    double labor = 0, other = 0;
+    double labor = 0, other = 0, otherGross = 0;
     for (final e in entries) {
       if (e.incomeType == '급여') {
         labor += e.amount;
       } else {
         other += e.amount;
+        // 원천징수 역산 — 사업소득 3.3%(÷0.967), 기타소득 8.8%(÷0.912). 원천징수 안 했으면 그대로.
+        final divisor = e.isWithheld ? (e.incomeType == '기타소득' ? 0.912 : 0.967) : 1.0;
+        otherGross += e.amount / divisor;
       }
     }
     if (mounted) {
       setState(() {
         _laborIncome = labor;
         _otherIncome = other;
+        _otherIncomeGrossEstimate = otherGross;
       });
     }
+    if (!kIsWeb && _notificationsEnabled) {
+      final prevMonth = now.month == 1 ? DateTime(now.year - 1, 12) : DateTime(now.year, now.month - 1);
+      final prevEntries = await dbService.getIncomeEntriesForMonth(prevMonth.year, prevMonth.month);
+      DateTime? lastIncomeDate;
+      for (final e in [...entries, ...prevEntries]) {
+        final eEnd = e.endDate ?? e.date;
+        final d = DateTime(eEnd.year, eEnd.month, eEnd.day);
+        if (lastIncomeDate == null || d.isAfter(lastIncomeDate)) lastIncomeDate = d;
+      }
+      ReminderScheduler.checkIncomeInactivityNudge(lastIncomeDate);
+    }
+    if (!kIsWeb && _notificationsEnabled && (_userType == '프리랜서' || _userType == 'N잡러')) {
+      final estimate = await ReserveEstimator.estimateForCurrentMonth(userType: _userType);
+      final allExpenses = await dbService.getExpenses();
+      final reservedThisMonth = allExpenses
+          .where((x) => x.category == '보험/금융' && x.date.year == now.year && x.date.month == now.month)
+          .fold<double>(0, (s, x) => s + x.amount);
+      await ReminderScheduler.checkTaxReserveShortfall(
+        recommendedMinReserve: estimate.minMonthlyTaxReserve + estimate.insuranceReserve,
+        actualReserved: reservedThisMonth,
+      );
+    }
+    await _checkNjobConversion();
+  }
+
+  /// 직장인의 가계부 '기타수익'(근로소득 외) 연 누적이 300만원(기타소득금액 종합과세 기준,
+  /// 경비율 미적용 원액)을 넘으면 N잡러 전환을 물어본다. 연 1회, 거절 시 그 해엔 다시 안 물어봄.
+  Future<void> _checkNjobConversion() async {
+    if (_userType != '직장인') return;
+    final now = DateTime.now();
+    final declinedYear = await dbService.getAppState('njob_conversion_declined_year');
+    if (declinedYear == now.year.toString()) return;
+
+    double otherTotal = 0.0;
+    for (int m = 1; m <= now.month; m++) {
+      final entries = await dbService.getIncomeEntriesForMonth(now.year, m);
+      for (final e in entries) {
+        if (e.incomeType != '급여') otherTotal += e.amount;
+      }
+    }
+    if (otherTotal <= 3000000 || !mounted) return;
+
+    final ink = AppTheme.ink(context);
+    final sub = AppTheme.inkSecondary(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: Text('N잡러로 전환할까요?', style: AppTheme.sans(16, ink, weight: FontWeight.w700)),
+        content: Text(
+          '올해 근로소득 외 수익이 ${_toWon(otherTotal)}을 넘었어요.\n'
+          'N잡러로 전환하면 근로소득·기타수익을 나눠서 관리하고, 종합소득세 대상 여부도 챙길 수 있어요.',
+          style: AppTheme.sans(14, sub),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('나중에', style: AppTheme.sans(14, sub)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('전환할게요', style: AppTheme.sans(14, AppTheme.accentColor(ctx), weight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await dbService.setProfileTypeValues('N잡러', grossIncome: _grossIncome, expenseTarget: _expenseTarget);
+      _setUserType('N잡러');
+    } else {
+      await dbService.setAppState('njob_conversion_declined_year', now.year.toString());
+    }
+  }
+
+  /// X로 닫은 배너 카드 목록 로드(만료된 건 자동 제외).
+  Future<void> _loadHiddenBanners() async {
+    final all = await dbService.getAllBannerHideTimes();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final ids = all.entries.where((e) => e.value > now).map((e) => e.key).toSet();
+    if (mounted) setState(() => _hiddenBannerIds = ids);
+  }
+
+  /// 배너 카드 닫기 — 30일간 다시 안 보임.
+  Future<void> _dismissBanner(_BannerCard card) async {
+    final until = DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch;
+    await dbService.saveBannerHideTime(card.id, until);
+    setState(() {
+      _hiddenBannerIds = {..._hiddenBannerIds, card.id};
+      _bannerIndex = 0;
+    });
+  }
+
+  /// 연중 가입 사용자 — 1월~지난달 기록이 비어있으면 소급 입력 배너를 보여준다.
+  Future<void> _checkBackfillPrompt() async {
+    final now = DateTime.now();
+    if (now.month <= 1) return;
+    final done = await dbService.getAppState('annual_backfill_done_${now.year}');
+    final dismissed = await dbService.getAppState('annual_backfill_dismissed_${now.year}');
+    if (done == 'true' || dismissed == 'true') return;
+    if (mounted) setState(() => _showBackfillPrompt = true);
+  }
+
+  Widget _buildBackfillPrompt() {
+    final ink = AppTheme.ink(context);
+    final sub = AppTheme.inkSecondary(context);
+    final accent = AppTheme.accentColor(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () async {
+              final changed = await Navigator.push<bool>(
+                  context, MaterialPageRoute(builder: (_) => const AnnualBackfillScreen()));
+              if (changed == true) {
+                await _loadMonthlyExpenses();
+                await _loadCurrentMonthIncome();
+              }
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('지난 달 기록이 비어있어요', style: AppTheme.sans(14, ink, weight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text('간단히 채우면 이번 달 판정이 더 정확해져요 →', style: AppTheme.sans(12, accent)),
+              ],
+            ),
+          ),
+        ),
+        GestureDetector(
+          onTap: () async {
+            await dbService.setAppState(
+                'annual_backfill_dismissed_${DateTime.now().year}', 'true');
+            if (mounted) setState(() => _showBackfillPrompt = false);
+          },
+          child: Icon(Icons.close_rounded, size: 18, color: sub),
+        ),
+      ],
+    );
   }
 
   Future<void> _loadMonthlyExpenses() async {
@@ -437,12 +585,27 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 유형별(직장인/N잡러/프리랜서) 독립 저장된 예상연봉·지출목표를 불러와 반영.
+  Future<void> _loadTypeValues(String userType) async {
+    final values = await dbService.getProfileTypeValues(userType);
+    if (!mounted) return;
+    setState(() {
+      _grossIncome = values['gross_income'] ?? 0.0;
+      _expenseTarget = values['expense_target'] ?? 0.0;
+      _grossIncomeInlineCtrl.text =
+          _grossIncome > 0 ? _numberFormat.format(_grossIncome.toInt()) : '';
+      _savingGoalController.text =
+          _expenseTarget > 0 ? _numberFormat.format(_expenseTarget.toInt()) : '';
+    });
+  }
+
   void _setUserType(String type) {
     setState(() {
       _userType = type;
       _bannerIndex = 0;
       _calculateTax();
     });
+    _loadTypeValues(type);
     _startBannerRotation();
     _saveProfileToDB();
     _refreshReminders(); // 유형별 시즌 알림 재예약
@@ -496,6 +659,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => SettingsScreen(
+          userType: _userType,
           notificationsEnabled: _notificationsEnabled,
           onNotificationsChanged: _setNotificationsEnabled,
           onDestroyData: _showDestroyConfirmDialog,
@@ -620,7 +784,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final annualSalary = _grossIncome > 0 ? _grossIncome : monthlyIncome * 12;
     final deductionThreshold = annualSalary * 0.25;
-    final hasThreshold = annualSalary > 0;
+    // 신용카드 등 사용금액 소득공제는 근로소득자 전용 — 프리랜서(사업소득만 있는 경우)는 대상 아님.
+    final hasThreshold = _isEmployee && annualSalary > 0;
     final thresholdProgress = hasThreshold ? (_creditCardTotal / deductionThreshold).clamp(0.0, 1.0) : 0.0;
     final overThreshold = hasThreshold && _creditCardTotal >= deductionThreshold;
     final monthlyCardPace = deductionThreshold / 12;
@@ -649,29 +814,52 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 14),
 
         // ── 수입 — 금액 위, 라벨 아래 (우측 정렬) ──
+        // 프리랜서는 금액을 탭하면 세전 환산으로 페이드 전환(원천징수 역산 — 근로소득과 달리
+        // 사업/기타소득은 고정 비율이라 정확히 역산 가능).
         Align(
           alignment: Alignment.centerRight,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              if (monthlyIncome > 0)
-                Text(_toWon(monthlyIncome), style: AppTheme.serif(44, ink, spacing: -1.5, height: 1.0))
-              else
-                Text('기록 없음', style: AppTheme.serif(28, tert, spacing: -0.5, height: 1.0)),
+              GestureDetector(
+                onTap: !_isEmployee && monthlyIncome > 0
+                    ? () => setState(() => _showGrossIncome = !_showGrossIncome)
+                    : null,
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: monthlyIncome > 0
+                      ? Text(
+                          _toWon(!_isEmployee && _showGrossIncome ? _otherIncomeGrossEstimate : monthlyIncome),
+                          key: ValueKey(_showGrossIncome),
+                          style: AppTheme.serif(44, ink, spacing: -1.5, height: 1.0),
+                        )
+                      : Text('기록 없음',
+                          key: const ValueKey('empty'),
+                          style: AppTheme.serif(28, tert, spacing: -0.5, height: 1.0)),
+                ),
+              ),
               const SizedBox(height: 4),
-              Text(_isEmployee ? '이번 달 수령액 (세전)' : '이번 달 수입 (세전)',
-                  style: AppTheme.sans(12, tert)),
+              Text(
+                _userType == 'N잡러'
+                    ? '이번 달 근로소득 (세전)'
+                    : _isEmployee
+                        ? '이번 달 수령액 (세전)'
+                        : (_showGrossIncome ? '이번 달 수입 (세전 환산 · 탭해서 되돌리기)' : '이번 달 수입 (세후 · 탭해서 세전 보기)'),
+                style: AppTheme.sans(12, tert),
+              ),
             ],
           ),
         ),
 
-        // ── N잡러: 근로소득 / 기타 수익 분리 (합산세율·건보료 판단 기준) ──
+        // ── N잡러: 근로소득 / 다른소득 — 헤드라인은 근로소득만 반영하므로
+        // 다른소득을 작은 칩이 아니라 대등한 비중으로 나란히 보여준다.
         if (_userType == 'N잡러' && (_laborIncome + _otherIncome) > 0) ...[
           const SizedBox(height: 12),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
             _spendChip('근로소득', _laborIncome),
             const SizedBox(width: 8),
-            _spendChip('기타 수익', _otherIncome),
+            _otherIncomeChip(),
           ]),
         ]
         // N잡러인데 분리 기록이 없으면 0원 칩을 항상 노출 + 나눠 기록 동선.
@@ -680,7 +868,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
             _spendChip('근로소득', _laborIncome),
             const SizedBox(width: 8),
-            _spendChip('기타 수익', _otherIncome),
+            _otherIncomeChip(),
           ]),
           const SizedBox(height: 8),
           Align(
@@ -821,7 +1009,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final val = double.tryParse(_grossIncomeInlineCtrl.text.replaceAll(',', '')) ?? 0.0;
         if (val > 0) {
           setState(() { _grossIncome = val; _showSalaryInput = false; });
-          await _saveProfileToDB();
+          await dbService.setProfileTypeValues(_userType, grossIncome: val);
           _calculateTax();
         } else {
           setState(() => _showSalaryInput = false);
@@ -851,7 +1039,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _savingGoalController.text = _numberFormat.format(val.toInt());
             _showExpenseInput = false;
           });
-          await _saveProfileToDB();
+          await dbService.setProfileTypeValues(_userType, expenseTarget: val);
         } else {
           setState(() => _showExpenseInput = false);
         }
@@ -972,6 +1160,34 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// N잡러의 "기타 수익" 칩 — 탭하면 세전 환산으로 페이드 전환(사업/기타소득만 원천징수 역산 가능,
+  /// 근로소득은 간이세액표 기반이라 역산 불가라서 이 칩에만 붙인다).
+  Widget _otherIncomeChip() {
+    return GestureDetector(
+      onTap: _otherIncome > 0
+          ? () => setState(() => _showOtherIncomeGross = !_showOtherIncomeGross)
+          : null,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppTheme.line(context), width: 1),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: Text(
+            _showOtherIncomeGross
+                ? '다른소득(세전) ${_toWon(_otherIncomeGrossEstimate)}'
+                : '다른소득 ${_toWon(_otherIncome)}',
+            key: ValueKey(_showOtherIncomeGross),
+            style: AppTheme.sans(12, AppTheme.inkSecondary(context), weight: FontWeight.w500),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 진행 막대 블록 (라벨 + 값 + 1px 트랙 + 설명)
   Widget _progressBlock(String label, String value, double progress, Color color, String note, {VoidCallback? onEdit}) {
     return Column(
@@ -1019,7 +1235,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _go(taxRecordEntryFor(_userType).build(_userType));
         break;
       case 'book':
-        _go(const FreelancerBookScreen());
+        _go(const ExpenseCalendarScreen());
         break;
       case 'simulator':
       default:
@@ -1070,7 +1286,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '기록 · 신고 준비 · 경정청구 · 서식',
+                  '기록 · 신고 준비 · 경정청구 · 양식',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTheme.sans(12, sub, weight: FontWeight.w600),
@@ -1119,6 +1335,10 @@ class _HomeScreenState extends State<HomeScreen> {
           // 이달 현황(수입·지출·공제 문턱).
           AppTheme.panel(context, child: _buildStatusSection()),
           const SizedBox(height: 14),
+          if (_showBackfillPrompt) ...[
+            AppTheme.panel(context, child: _buildBackfillPrompt()),
+            const SizedBox(height: 14),
+          ],
           // 리마인더(핵심 기능) — 접이식.
           AppTheme.panel(context, child: ReminderCard(userType: _userType)),
           const SizedBox(height: 14),
@@ -1190,6 +1410,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _isTypeIdentified = true;
         _bannerIndex = 0;
       });
+      await _loadTypeValues(result);
       await _saveProfileToDB();
       _startBannerRotation();
     }
@@ -1228,7 +1449,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ))
       .toList();
 
-  List<_BannerCard> _bannerCards() {
+  List<_BannerCard> _bannerCards() =>
+      _rawBannerCards().where((c) => !_hiddenBannerIds.contains(c.id)).toList();
+
+  List<_BannerCard> _rawBannerCards() {
     final s = _seasonalBanner();
 
     // ── 상태 A: 유형 미파악 (완전 신규) ──
@@ -1274,8 +1498,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final cards = <_BannerCard>[];
 
-    // ── 상태 C: 완료 + 소득 미설정 ──
-    if (_grossIncome == 0) {
+    // ── 상태 C: 완료 + 소득 미설정 — 직장인·N잡러만(프리랜서는 고정급여 개념이 없음) ──
+    if (_isEmployee && _grossIncome == 0) {
       cards.add(_BannerCard(
         label: '다음 단계',
         headline: '예상 연봉을 입력하면\n공제 기준이 잡혀요',
@@ -1283,7 +1507,7 @@ class _HomeScreenState extends State<HomeScreen> {
         glyph: '₩',
         onTap: () => setState(() => _showSalaryInput = true),
       ));
-    } else {
+    } else if (_grossIncome > 0) {
       // ── 상태 D: 완료 + 소득 설정됨 — 개인화 카드 ──
       if (_userType == '직장인') {
         final remaining = _grossIncome * 0.25 - _creditCardTotal;
@@ -1325,17 +1549,15 @@ class _HomeScreenState extends State<HomeScreen> {
     // 유형별 도구 카드
     if (_userType == '직장인') {
       cards.addAll([
-        _BannerCard(label: '종합소득세', headline: '회사에 안 알리고\n5월에 직접 환급받기', action: '5월 신고 시작', glyph: '소', onTap: () => _go(taxRecordEntryFor(_userType).build(_userType))),
-        _BannerCard(label: '경정청구', headline: '작년에 놓친 공제도\n5년 안엔 돌려받아요', action: '환급액 계산하기', glyph: '환', onTap: () => _go(TaxSimulatorScreen(userType: _userType))),
+        _BannerCard(label: '환급', headline: '회사가 놓친 공제,\n5월 신고나 경정청구로 돌려받아요', action: '환급액 계산하기', glyph: '환', onTap: () => _go(TaxSimulatorScreen(userType: _userType))),
       ]);
     } else if (_userType == 'N잡러') {
       cards.addAll([
-        _BannerCard(label: 'N잡 합산', headline: '근로+부업 합치면\n세율이 올라가요', action: '합산소득세 보기', glyph: '합', onTap: () => _go(TaxSimulatorScreen(userType: _userType))),
         _BannerCard(label: '건강보험', headline: '부업 2,000만 넘으면\n건보료가 따라와요', action: '기준 확인하기', glyph: '보', onTap: () => _go(const FinancialIncomeScreen())),
       ]);
     } else {
       cards.addAll([
-        _BannerCard(label: '경비율', headline: '장부를 쓰면 경비\n인정 폭이 넓어져요', action: '간편장부 열기', glyph: '장', onTap: () => _go(const FreelancerBookScreen())),
+        _BannerCard(label: '경비율', headline: '장부를 쓰면 경비\n인정 폭이 넓어져요', action: '가계부 열기', glyph: '장', onTap: () => _go(const ExpenseCalendarScreen())),
       ]);
     }
 
@@ -1398,17 +1620,36 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Expanded(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.start,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(c.label.toUpperCase(), style: AppTheme.label(context)),
+                  Row(
+                    children: [
+                      Expanded(child: Text(c.label.toUpperCase(), style: AppTheme.label(context))),
+                      GestureDetector(
+                        onTap: () => _dismissBanner(c),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Icon(Icons.close_rounded, size: 16, color: sub),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 7),
-                  Text(c.headline,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTheme.serif(22, ink, spacing: -0.5, height: 1.2)),
-                  if (subText != null) ...[
-                    const SizedBox(height: 6),
+                  // 헤드라인이 1줄이든 2줄이든 카드 높이를 동일하게 유지 — 아래 보조 문구 위치 고정.
+                  SizedBox(
+                    height: 22 * 1.2 * 2,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(c.headline,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTheme.serif(22, ink, spacing: -0.5, height: 1.2)),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  if (subText != null)
                     Row(children: [
                       Flexible(
                         child: Text(subText,
@@ -1419,7 +1660,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 5),
                       Icon(Icons.arrow_forward, size: 13, color: sub),
                     ]),
-                  ],
                 ],
               ),
             ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class YouthHousingDreamScreen extends StatefulWidget {
   const YouthHousingDreamScreen({super.key});
@@ -167,6 +168,7 @@ class _YouthHousingDreamScreenState extends State<YouthHousingDreamScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

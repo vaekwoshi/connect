@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 import '../../core/data/db_helper.dart';
 import '../../core/tax_engine/employee_tax.dart';
 import '../../core/tax_engine/tax_rates.dart';
@@ -268,6 +269,7 @@ class _DependentDeductionScreenState extends State<DependentDeductionScreen> {
                     style: TextStyle(color: Theme.of(context).scaffoldBackgroundColor, fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

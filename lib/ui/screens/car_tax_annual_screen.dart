@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class CarTaxAnnualScreen extends StatefulWidget {
   const CarTaxAnnualScreen({super.key});
@@ -120,6 +121,7 @@ class _CarTaxAnnualScreenState extends State<CarTaxAnnualScreen> {
               '2024년 1월부터 10% 일괄 할인은 폐지되고 일할 계산 방식으로 변경되었습니다.',
               '체납액이 있으면 신청이 제한될 수 있습니다.',
             ], line, sub, ink),
+            const CalcDisclaimer(),
           ],
         ),
       ),

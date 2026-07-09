@@ -4,7 +4,11 @@ import 'package:intl/intl.dart';
 
 import '../theme/app_theme.dart';
 import '../../core/data/db_helper.dart';
+import '../../core/data/occupation_data.dart';
+import '../../core/tax_engine/insurance_engine.dart';
 import '../../core/notifications/reminder_scheduler.dart';
+import '../components/occupation_search_bottom_sheet.dart';
+import '../components/amount_field.dart';
 import 'profile_input_screen.dart';
 
 /// 내 정보 — 하단 탭 허브. 정확한 절세 계산의 출발점이라 가장 앞에 둔다.
@@ -99,6 +103,45 @@ class _MyInfoScreenState extends State<MyInfoScreen> {
     }
   }
 
+  // ── 프리랜서·N잡러 전용: 업종코드·재산액·4대보험 가입여부 ──────────
+  // 유형(직장인/N잡러/프리랜서) 전환과 무관하게 단일 값으로 저장한다 —
+  // 실제로 어떤 일을 하는지는 앱이 그 사람을 어떻게 부르는지와 무관한 사실이라서다.
+  bool get _isBusinessUser => widget.userType == '프리랜서' || widget.userType == 'N잡러';
+
+  String? get _occupationCode => _profile?['occupation_code'] as String?;
+  OccupationInfo? get _occupationInfo => OccupationData.occupations[_occupationCode];
+
+  Future<void> _updateProfileFields(Map<String, dynamic> changes) async {
+    final updated = Map<String, dynamic>.from(_profile ?? {});
+    updated.addAll(changes);
+    await dbService.saveProfile(updated);
+    if (!mounted) return;
+    setState(() => _profile = updated);
+    widget.onProfileChanged();
+  }
+
+  Future<void> _pickOccupation() async {
+    final result = await OccupationSearchBottomSheet.show(context);
+    if (result == null) return;
+    final changes = <String, dynamic>{'occupation_code': result.code};
+    // 특고(노무제공자) 매핑 업종이 아니면 고용·산재보험은 대상이 아니라 자동으로 끈다.
+    if (!specialWorkerIndustrialRates.containsKey(result.code)) {
+      changes['employment_enrolled'] = false;
+      changes['industrial_accident_enrolled'] = false;
+    }
+    await _updateProfileFields(changes);
+  }
+
+  Future<void> _openPropertyValueDialog() async {
+    final current = (_profile?['property_value'] as num?)?.toDouble() ?? 0.0;
+    final picked = await showDialog<double>(
+      context: context,
+      builder: (ctx) => _PropertyValueDialog(current: current),
+    );
+    if (picked == null) return;
+    await _updateProfileFields({'property_value': picked});
+  }
+
   @override
   Widget build(BuildContext context) {
     final ink = AppTheme.ink(context);
@@ -106,6 +149,15 @@ class _MyInfoScreenState extends State<MyInfoScreen> {
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: sub),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
       body: SafeArea(
         child: _loading
             ? const SizedBox.shrink()
@@ -175,6 +227,10 @@ class _MyInfoScreenState extends State<MyInfoScreen> {
           const SizedBox(height: 14),
           AppTheme.hairline(context),
           _payDayRow(ink, sub, accent),
+          if (_isBusinessUser) ...[
+            AppTheme.hairline(context),
+            _professionSection(ink, sub, accent),
+          ],
           AppTheme.hairline(context),
           GestureDetector(
             onTap: _openProfile,
@@ -226,6 +282,100 @@ class _MyInfoScreenState extends State<MyInfoScreen> {
     );
   }
 
+  /// 프리랜서·N잡러 전용 — 세금·4대보험 적립 추정에 쓰이는 값들.
+  /// 가계부 적립 카드에서 "프로필 수정"으로 이 섹션에 바로 진입한다.
+  Widget _professionSection(Color ink, Color sub, Color accent) {
+    final occ = _occupationInfo;
+    final propertyValue = (_profile?['property_value'] as num?)?.toDouble() ?? 0.0;
+    final isSpecialWorker = _occupationCode != null && specialWorkerIndustrialRates.containsKey(_occupationCode);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: _pickOccupation,
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Row(children: [
+              Icon(Icons.work_outline_rounded, size: 18, color: occ != null ? sub : accent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('업종코드',
+                      style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
+                  const SizedBox(height: 2),
+                  Text(occ != null ? occ.name : '설정되지 않았어요 — 세금 적립액 정확도에 쓰여요',
+                      style: AppTheme.sans(12, occ != null ? sub : accent)),
+                ]),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 20, color: AppTheme.inkTertiary(context)),
+            ]),
+          ),
+        ),
+        AppTheme.hairline(context),
+        GestureDetector(
+          onTap: _openPropertyValueDialog,
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Row(children: [
+              Icon(Icons.home_work_outlined, size: 18, color: propertyValue > 0 ? sub : accent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('재산액(보증금 등)',
+                      style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
+                  const SizedBox(height: 2),
+                  Text('건강보험료 부과점수 계산에 쓰여요', style: AppTheme.sans(12, sub)),
+                ]),
+              ),
+              Text(propertyValue > 0 ? '${_fmt.format(propertyValue.toInt())}원' : '설정',
+                  style: AppTheme.sans(15, propertyValue > 0 ? ink : accent, weight: FontWeight.w600)),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded, size: 20, color: AppTheme.inkTertiary(context)),
+            ]),
+          ),
+        ),
+        AppTheme.hairline(context),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('4대보험 가입여부', style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
+              const SizedBox(height: 2),
+              Text('실제로 가입한 것만 켜두세요 — 나중에 언제든 바꿀 수 있어요',
+                  style: AppTheme.sans(12, sub)),
+              const SizedBox(height: 6),
+              _insuranceToggle('국민연금', 'pension_enrolled', ink, sub, accent),
+              _insuranceToggle('건강보험', 'health_enrolled', ink, sub, accent),
+              if (isSpecialWorker) ...[
+                _insuranceToggle('고용보험', 'employment_enrolled', ink, sub, accent),
+                _insuranceToggle('산재보험', 'industrial_accident_enrolled', ink, sub, accent),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _insuranceToggle(String label, String key, Color ink, Color sub, Color accent) {
+    final enabled = _profile?[key] == true;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Expanded(child: Text(label, style: AppTheme.sans(14, ink))),
+        Switch(
+          value: enabled,
+          activeColor: accent,
+          onChanged: (v) => _updateProfileFields({key: v}),
+        ),
+      ]),
+    );
+  }
+
   Widget _checkChip(({String label, bool filled}) e) {
     final c = e.filled ? AppTheme.inkSecondary(context) : AppTheme.accentColor(context);
     return Container(
@@ -242,6 +392,64 @@ class _MyInfoScreenState extends State<MyInfoScreen> {
     );
   }
 
+}
+
+/// 재산액(건강보험 부과점수 계산용) 입력 다이얼로그.
+class _PropertyValueDialog extends StatefulWidget {
+  final double current;
+  const _PropertyValueDialog({required this.current});
+
+  @override
+  State<_PropertyValueDialog> createState() => _PropertyValueDialogState();
+}
+
+class _PropertyValueDialogState extends State<_PropertyValueDialog> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.current > 0 ? NumberFormat('#,###').format(widget.current.toInt()) : '',
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = AppTheme.ink(context);
+    final sub = AppTheme.inkSecondary(context);
+    final accent = AppTheme.accentColor(context);
+
+    return AlertDialog(
+      backgroundColor: Theme.of(context).cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('재산액', style: AppTheme.serif(17, ink, weight: FontWeight.w400, spacing: -0.3)),
+        const SizedBox(height: 4),
+        Text('전세보증금 등 재산가액을 입력해주세요', style: AppTheme.sans(12, sub, height: 1.4)),
+      ]),
+      content: SizedBox(
+        width: 280,
+        child: AmountField(controller: _ctrl, expand: true, autofocus: true),
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('취소', style: AppTheme.sans(14, sub)),
+        ),
+        TextButton(
+          onPressed: () {
+            final value = double.tryParse(_ctrl.text.replaceAll(',', '')) ?? 0.0;
+            Navigator.pop(context, value);
+          },
+          child: Text('저장', style: AppTheme.sans(14, accent, weight: FontWeight.w700)),
+        ),
+      ],
+    );
+  }
 }
 
 /// 1~31 날짜 그리드 선택 다이얼로그.

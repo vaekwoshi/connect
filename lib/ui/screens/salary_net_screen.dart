@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 import '../../core/tax_engine/insurance_engine.dart';
 import '../../core/tax_engine/employee_tax.dart';
 
@@ -235,6 +236,7 @@ class _SalaryNetScreenState extends State<SalaryNetScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

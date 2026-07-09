@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../../core/notifications/system_reminder_catalog.dart';
 import '../../core/notifications/reminder_scheduler.dart';
+import '../../core/security/notification_helper.dart';
 import '../../core/data/db_helper.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
@@ -19,6 +20,8 @@ class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
   Map<String, bool> _settings = {};
   bool _loading = true;
+  bool _ownsCar = true;
+  bool _ownsHouse = true;
 
   @override
   void initState() {
@@ -28,9 +31,12 @@ class _NotificationSettingsScreenState
 
   Future<void> _load() async {
     final s = await dbService.getReminderSettings();
+    final profile = await dbService.getProfile();
     if (!mounted) return;
     setState(() {
       _settings = s;
+      _ownsCar = profile?['owns_car'] ?? true;
+      _ownsHouse = profile?['owns_house'] ?? true;
       _loading = false;
     });
   }
@@ -40,6 +46,7 @@ class _NotificationSettingsScreenState
   bool _groupOn(List<SystemReminder> items) => items.every((s) => _on(s.key));
 
   Future<void> _toggleGroup(List<SystemReminder> items, bool v) async {
+    if (v && !kIsWeb) await notificationHelper.ensurePermissionIfNeeded();
     for (final s in items) {
       await dbService.setReminderSetting(s.key, v);
     }
@@ -48,6 +55,7 @@ class _NotificationSettingsScreenState
   }
 
   Future<void> _toggleItem(SystemReminder s, bool v) async {
+    if (v && !kIsWeb) await notificationHelper.ensurePermissionIfNeeded();
     await dbService.setReminderSetting(s.key, v);
     if (s.category == SysCategory.deadline && !kIsWeb) {
       await ReminderScheduler.scheduleTaxSeason(widget.userType);
@@ -87,7 +95,7 @@ class _NotificationSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final ink = AppTheme.ink(context);
-    final sys = systemRemindersFor(widget.userType);
+    final sys = systemRemindersFor(widget.userType, ownsCar: _ownsCar, ownsHouse: _ownsHouse);
     final deadlines =
         sys.where((s) => s.category == SysCategory.deadline).toList();
     final thresholds =

@@ -5,6 +5,9 @@ import '../data/db_helper.dart';
 const Map<String, Map<String, int>> kEventReminderDefaults = {
   'budget_alert': {'hour': 20, 'minute': 0},
   'inactivity_nudge': {'hour': 9, 'minute': 0},
+  'income_inactivity_nudge': {'hour': 9, 'minute': 0},
+  'recurring_expense_alert': {'hour': 9, 'minute': 0},
+  'tax_reserve_shortfall': {'hour': 9, 'minute': 0},
 };
 
 class ResolvedEventPref {

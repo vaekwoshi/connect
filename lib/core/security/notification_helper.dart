@@ -164,6 +164,13 @@ class NotificationHelper {
     return ok ?? true;
   }
 
+  /// 알림 토글을 켤 때 호출 — OS 권한이 꺼져 있으면 시스템 허용 요청을 띄운다.
+  Future<void> ensurePermissionIfNeeded() async {
+    if (!await notificationsAllowed()) {
+      await requestPermissions();
+    }
+  }
+
   Future<void> cancel(int id) => flutterLocalNotificationsPlugin.cancel(id: id);
 
   Future<void> cancelAll() => flutterLocalNotificationsPlugin.cancelAll();

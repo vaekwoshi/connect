@@ -15,7 +15,7 @@ import 'pension_calculator_screen.dart';
 import 'dependent_deduction_screen.dart';
 import 'insurance_premium_screen.dart';
 import 'financial_income_screen.dart';
-import 'freelancer_book_screen.dart';
+import 'expense_calendar_screen.dart';
 
 /// 세무 도구 — 상단 4단계 신고 파이프라인(기록→진단→신고서→경정청구) +
 /// 하단 빠르게 계산(단발 계산기). 구 "5월에 챙길 항목" 나열을 대체.
@@ -107,7 +107,7 @@ class _TaxToolsMenuState extends State<TaxToolsMenu> {
         _checklistRow(context),
         AppTheme.hairline(context),
         const SizedBox(height: 28),
-        Text('서식'.toUpperCase(), style: AppTheme.label(context)),
+        Text('양식'.toUpperCase(), style: AppTheme.label(context)),
         const SizedBox(height: 6),
         AppTheme.hairline(context),
         _formsRow(context),
@@ -221,9 +221,9 @@ class _TaxToolsMenuState extends State<TaxToolsMenu> {
         child: Row(children: [
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('서식 14종', style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
+              Text('양식 ${allTaxForms.length}종', style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
               const SizedBox(height: 3),
-              Text('연말정산·종소세·경정청구 등 자주 쓰는 서식 모음',
+              Text('연말정산·종소세·경정청구 등 자주 쓰는 양식 모음',
                   style: AppTheme.sans(12, sub, height: 1.4)),
             ]),
           ),
@@ -396,4 +396,4 @@ Widget _pension(String u) => const PensionCalculatorScreen();
 Widget _dependent(String u) => const DependentDeductionScreen();
 Widget _insurance(String u) => const InsurancePremiumScreen();
 Widget _financial(String u) => const FinancialIncomeScreen();
-Widget _freelancerBook(String u) => const FreelancerBookScreen();
+Widget _freelancerBook(String u) => const ExpenseCalendarScreen();

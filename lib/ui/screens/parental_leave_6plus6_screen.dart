@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class ParentalLeave6Plus6Screen extends StatefulWidget {
   const ParentalLeave6Plus6Screen({super.key});
@@ -142,6 +143,7 @@ class _ParentalLeave6Plus6ScreenState extends State<ParentalLeave6Plus6Screen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

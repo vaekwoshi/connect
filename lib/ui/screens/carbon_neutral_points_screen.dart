@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class CarbonNeutralPointsScreen extends StatefulWidget {
   const CarbonNeutralPointsScreen({super.key});
@@ -175,6 +176,7 @@ class _CarbonNeutralPointsScreenState extends State<CarbonNeutralPointsScreen> {
               '전자영수증·텀블러 사용은 각각 연 100건·100회까지만 인정됩니다.',
               '적립 포인트는 매월 자동 정산되며, 세부 단가는 환경부 고시에 따라 변동될 수 있습니다.',
             ], line, sub, ink),
+            const CalcDisclaimer(),
           ],
         ),
       ),

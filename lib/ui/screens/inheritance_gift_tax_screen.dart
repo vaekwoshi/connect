@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 enum _TaxType { inheritance, gift }
 
@@ -338,6 +339,7 @@ class _InheritanceGiftTaxScreenState extends State<InheritanceGiftTaxScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

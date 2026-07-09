@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class YouthLeapAccountScreen extends StatefulWidget {
   const YouthLeapAccountScreen({super.key});
@@ -203,6 +204,7 @@ class _YouthLeapAccountScreenState extends State<YouthLeapAccountScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

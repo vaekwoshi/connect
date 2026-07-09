@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class OutOfPocketCapScreen extends StatefulWidget {
   const OutOfPocketCapScreen({super.key});
@@ -191,6 +192,7 @@ class _OutOfPocketCapScreenState extends State<OutOfPocketCapScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

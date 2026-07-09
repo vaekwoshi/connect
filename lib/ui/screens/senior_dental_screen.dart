@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class SeniorDentalScreen extends StatefulWidget {
   const SeniorDentalScreen({super.key});
@@ -131,6 +132,7 @@ class _SeniorDentalScreenState extends State<SeniorDentalScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

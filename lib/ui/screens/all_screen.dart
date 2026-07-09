@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'expense_calendar_screen.dart';
-import 'notification_settings_screen.dart';
 import 'reminder_list_screen.dart';
 import 'tax_tools_screen.dart';
 import 'forms_screen.dart';
@@ -52,16 +51,6 @@ class AllScreen extends StatelessWidget {
                 MaterialPageRoute(
                     builder: (_) =>
                         ReminderListScreen(userType: userType, embedded: false))),
-          ),
-          _menuItem(
-            context,
-            icon: Icons.tune_rounded,
-            label: '알림 설정',
-            onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) =>
-                        NotificationSettingsScreen(userType: userType))),
           ),
           _divider(context),
           _sectionHeader(context, '세금'),

@@ -51,10 +51,13 @@ class NotificationHistory {
   static Future<void> _backfillSystemCatalog(DateTime from, DateTime to, String userType) async {
     final settings = await dbService.getReminderSettings();
     bool isOn(String key) => settings[key] ?? true;
+    final profile = await dbService.getProfile();
+    final ownsCar = profile?['owns_car'] ?? true;
+    final ownsHouse = profile?['owns_house'] ?? true;
 
     for (final s in kSystemReminderCatalog) {
       if (s.isEvent) continue; // 이벤트형(문턱 등)은 즉시 알림이라 이미 기록됨.
-      if (!s.appliesTo(userType) || !isOn(s.key)) continue;
+      if (!s.appliesTo(userType, ownsCar: ownsCar, ownsHouse: ownsHouse) || !isOn(s.key)) continue;
       for (final when in _systemOccurrences(s, from, to)) {
         await dbService.insertNotificationLog(
           title: s.title,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 import '../../core/tax_engine/insurance_engine.dart';
 
 /// 4대보험료 계산기 (2026년 기준)
@@ -180,6 +181,7 @@ class _FourInsuranceScreenState extends State<FourInsuranceScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

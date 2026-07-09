@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class SevereDiseaseCopaymentScreen extends StatefulWidget {
   const SevereDiseaseCopaymentScreen({super.key});
@@ -195,6 +196,7 @@ class _SevereDiseaseCopaymentScreenState
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

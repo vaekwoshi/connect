@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 import '../../core/data/db_helper.dart';
 import '../../core/tax_engine/combined_tax.dart';
 import '../../core/tax_engine/tax_rates.dart';
@@ -243,6 +244,7 @@ class _FinancialIncomeScreenState extends State<FinancialIncomeScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

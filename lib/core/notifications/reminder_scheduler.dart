@@ -1,7 +1,10 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../security/notification_helper.dart';
 import '../data/db_helper.dart';
+import '../data/recurring_template.dart';
+import '../tax_engine/reserve_estimator.dart';
 import 'system_reminder_catalog.dart';
 import 'custom_reminder_service.dart';
 import 'notification_history.dart';
@@ -35,20 +38,45 @@ class ReminderScheduler {
   static Future<void> scheduleTaxSeason(String userType) async {
     final settings = await dbService.getReminderSettings();
     bool isOn(String key) => settings[key] ?? true; // 행 없으면 ON
+    final profile = await dbService.getProfile();
+    final ownsCar = profile?['owns_car'] ?? true;
+    final ownsHouse = profile?['owns_house'] ?? true;
 
     for (final s in kSystemReminderCatalog) {
       if (s.isEvent) continue; // 이벤트형(문턱)은 발생 시점에 show…로 처리
-      final active = s.appliesTo(userType) && isOn(s.key);
+      final active = s.appliesTo(userType, ownsCar: ownsCar, ownsHouse: ownsHouse) && isOn(s.key);
       if (active) {
+        String body = s.body;
+        // 프리랜서·N잡러는 "5월 신고 준비" 알림에 예상 세금 대비 현재 적립 현황을 덧붙인다.
+        if (s.key == 'sys_may_prep' && (userType == '프리랜서' || userType == 'N잡러')) {
+          body = await _appendReserveStatus(body, userType);
+        }
         await notificationHelper.scheduleAtDate(
           id: s.notifId,
           title: s.title,
-          body: s.body,
+          body: body,
           when: _nextOccurrence(s.month!, s.day!, hour: s.hour),
         );
       } else {
         await notificationHelper.cancel(s.notifId);
       }
+    }
+  }
+
+  /// "5월 신고 준비" 알림 본문에 예상 세금 대비 현재 적립 현황을 덧붙인다.
+  /// 이번 달분이 아니라 연간 전체를 보여줘야 신고 시점 감각에 맞아 annualTotalTax 범위를 그대로 쓴다.
+  static Future<String> _appendReserveStatus(String baseBody, String userType) async {
+    try {
+      final estimate = await ReserveEstimator.estimateForCurrentMonth(userType: userType);
+      final annualMin = (estimate.minMonthlyTaxReserve * 12).round();
+      final annualMax = (estimate.maxMonthlyTaxReserve * 12).round();
+      final fmt = NumberFormat('#,###');
+      final range = annualMin == annualMax
+          ? '${fmt.format(annualMin)}원'
+          : '${fmt.format(annualMin)}~${fmt.format(annualMax)}원';
+      return '$baseBody 올해 예상 세금은 대략 $range이에요 — 가계부에서 적립 현황을 확인해보세요.';
+    } catch (_) {
+      return baseBody;
     }
   }
 
@@ -148,6 +176,83 @@ class ReminderScheduler {
       id: idInactivityNudge,
       title: '가계부 기록이 없어요',
       body: '최근 며칠간 지출 기록이 없네요. 잠깐 기록해 볼까요?',
+      delay: target.difference(now),
+    );
+  }
+
+  /// 고정지출 알림 — 템플릿마다 dayOfMonth 당일 1건, 매달 반복 (ids 2200~2299).
+  /// 전체 템플릿을 묶는 토글 하나(recurring_expense_alert)로 온/오프.
+  static Future<void> scheduleRecurringExpenses(List<RecurringTemplate> templates) async {
+    for (int i = 0; i < 100; i++) {
+      await notificationHelper.cancel(2200 + i);
+    }
+    final pref = await resolveEventPref('recurring_expense_alert');
+    if (!pref.enabled) return;
+    final now = DateTime.now();
+    for (int i = 0; i < templates.length && i < 100; i++) {
+      final t = templates[i];
+      var when = DateTime(now.year, now.month, t.dayOfMonth, pref.hour, pref.minute);
+      if (!when.isAfter(now)) {
+        final nextMonth = now.month == 12 ? 1 : now.month + 1;
+        final nextYear = now.month == 12 ? now.year + 1 : now.year;
+        when = DateTime(nextYear, nextMonth, t.dayOfMonth, pref.hour, pref.minute);
+      }
+      await notificationHelper.scheduleAtDate(
+        id: 2200 + i,
+        title: '오늘 ${t.name} 결제일이에요',
+        body: '가계부에 기록해서 잊지 않게 챙겨보세요.',
+        when: when,
+        matchComponents: DateTimeComponents.dayOfMonthAndTime,
+      );
+    }
+  }
+
+  static const int idIncomeInactivityNudge = 2004;
+
+  /// 수입 미기록 넛지 — 지출 넛지와 별도 토글. 3일 이상 수입 기록이 없으면
+  /// 다음날 아침(기본 9시, 리마인더에서 편집 가능) 지연 알림 예약.
+  static Future<void> checkIncomeInactivityNudge(DateTime? lastIncomeDate) async {
+    final pref = await resolveEventPref('income_inactivity_nudge');
+    if (!pref.enabled || lastIncomeDate == null) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final last = DateTime(lastIncomeDate.year, lastIncomeDate.month, lastIncomeDate.day);
+    if (today.difference(last).inDays < 3) {
+      await notificationHelper.cancel(idIncomeInactivityNudge);
+      return;
+    }
+    final target = DateTime(now.year, now.month, now.day + 1, pref.hour, pref.minute);
+    await notificationHelper.scheduleNotification(
+      id: idIncomeInactivityNudge,
+      title: '수입 기록이 없어요',
+      body: '최근 며칠간 수입 기록이 없네요. 잠깐 기록해 볼까요?',
+      delay: target.difference(now),
+    );
+  }
+
+  static const int idTaxReserveShortfall = 2005;
+
+  /// 세금 적립 부족 경고 — 이번 달 권장 최소 적립액([recommendedMinReserve]) 대비
+  /// 실제로 "보험/금융" 카테고리에 기록된 지출([actualReserved])이 못 미치면 다음날
+  /// 아침(기본 9시, 리마인더에서 편집 가능) 지연 알림 예약. 조건 해소 시 자동 취소.
+  static Future<void> checkTaxReserveShortfall({
+    required double recommendedMinReserve,
+    required double actualReserved,
+  }) async {
+    final pref = await resolveEventPref('tax_reserve_shortfall');
+    if (!pref.enabled || recommendedMinReserve <= 0) return;
+    if (actualReserved >= recommendedMinReserve) {
+      await notificationHelper.cancel(idTaxReserveShortfall);
+      return;
+    }
+    final now = DateTime.now();
+    final target = DateTime(now.year, now.month, now.day + 1, pref.hour, pref.minute);
+    final shortfallPct =
+        (((recommendedMinReserve - actualReserved) / recommendedMinReserve) * 100).round();
+    await notificationHelper.scheduleNotification(
+      id: idTaxReserveShortfall,
+      title: '세금 적립이 부족해요',
+      body: '현재 권장 적립률보다 $shortfallPct% 부족해요. 가계부에서 확인해 보세요.',
       delay: target.difference(now),
     );
   }

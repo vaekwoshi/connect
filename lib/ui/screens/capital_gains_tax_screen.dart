@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class _TaxResult {
   final double gain;
@@ -376,6 +377,7 @@ class _CapitalGainsTaxScreenState extends State<CapitalGainsTaxScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

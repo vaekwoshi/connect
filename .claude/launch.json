@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["--yes", "serve", "build/web", "-s"],
       "port": 3000
+    },
+    {
+      "name": "design-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "design", "-l", "3001"],
+      "port": 3001
     }
   ]
 }

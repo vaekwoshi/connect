@@ -31,6 +31,8 @@ class _ReminderCardState extends State<ReminderCard> {
   Map<String, bool> _sysSettings = {};
   bool _expanded = true;
   bool _loading = true;
+  bool _ownsCar = true;
+  bool _ownsHouse = true;
 
   @override
   void initState() {
@@ -41,10 +43,13 @@ class _ReminderCardState extends State<ReminderCard> {
   Future<void> _load() async {
     final list = await customReminderService.list();
     final settings = await dbService.getReminderSettings();
+    final profile = await dbService.getProfile();
     if (!mounted) return;
     setState(() {
       _reminders = list;
       _sysSettings = settings;
+      _ownsCar = profile?['owns_car'] ?? true;
+      _ownsHouse = profile?['owns_house'] ?? true;
       _loading = false;
     });
   }
@@ -71,7 +76,7 @@ class _ReminderCardState extends State<ReminderCard> {
       cands.add(_Upcoming(when, r.title, label));
     }
     // 시스템 기한 알림 (없으면 ON)
-    for (final s in systemRemindersFor(widget.userType)) {
+    for (final s in systemRemindersFor(widget.userType, ownsCar: _ownsCar, ownsHouse: _ownsHouse)) {
       if (s.isEvent) continue;
       if (_sysSettings[s.key] == false) continue;
       var when = DateTime(now.year, s.month!, s.day!, s.hour);

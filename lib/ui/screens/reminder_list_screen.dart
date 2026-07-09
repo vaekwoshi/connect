@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../../core/notifications/reminder.dart';
 import '../../core/notifications/custom_reminder_service.dart';
 import '../../core/notifications/event_reminder_prefs.dart';
+import '../../core/notifications/reminder_scheduler.dart';
 import '../../core/security/notification_helper.dart';
 import '../../core/data/db_helper.dart';
 import 'reminder_form_screen.dart';
@@ -35,6 +36,8 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
   List<Reminder> _userItems = [];
   ResolvedEventPref _budgetPref = const ResolvedEventPref(enabled: true, hour: 20, minute: 0);
   ResolvedEventPref _inactivityPref = const ResolvedEventPref(enabled: true, hour: 9, minute: 0);
+  ResolvedEventPref _incomeInactivityPref = const ResolvedEventPref(enabled: true, hour: 9, minute: 0);
+  ResolvedEventPref _recurringExpensePref = const ResolvedEventPref(enabled: true, hour: 9, minute: 0);
   bool _loading = true;
 
   @override
@@ -48,11 +51,15 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
     final items = await customReminderService.list();
     final budget = await resolveEventPref('budget_alert');
     final inactivity = await resolveEventPref('inactivity_nudge');
+    final incomeInactivity = await resolveEventPref('income_inactivity_nudge');
+    final recurringExpense = await resolveEventPref('recurring_expense_alert');
     if (!mounted) return;
     setState(() {
       _userItems = items;
       _budgetPref = budget;
       _inactivityPref = inactivity;
+      _incomeInactivityPref = incomeInactivity;
+      _recurringExpensePref = recurringExpense;
       _loading = false;
     });
   }
@@ -135,13 +142,6 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
                       style: AppTheme.sans(14, sub, height: 1.55)),
                   const SizedBox(height: 18),
 
-                  // ── 기본 제공 (앱이 자동으로 챙겨주는 알림) ──
-                  _section('기본 제공', [
-                    ..._records.map(_userRow),
-                    _eventRow('budget_alert', '예산 목표 80%·초과 알림', _budgetPref),
-                    _eventRow('inactivity_nudge', '가계부 미기록 넛지', _inactivityPref),
-                  ]),
-
                   // ── 내가 만든 (CRUD) ──
                   _section(
                       '내가 만든',
@@ -151,6 +151,16 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
                   _presetChips(),
                   const SizedBox(height: 14),
                   _addButton(),
+                  const SizedBox(height: 18),
+
+                  // ── 기본 제공 (앱이 자동으로 챙겨주는 알림) ──
+                  _section('기본 제공', [
+                    ..._records.map(_userRow),
+                    _eventRow('budget_alert', '예산 목표 80%·초과 알림', _budgetPref),
+                    _eventRow('inactivity_nudge', '지출 미기록 넛지', _inactivityPref),
+                    _eventRow('income_inactivity_nudge', '수입 미기록 넛지', _incomeInactivityPref),
+                    _eventRow('recurring_expense_alert', '고정지출 알림', _recurringExpensePref),
+                  ]),
                 ],
               ),
       ),
@@ -206,11 +216,21 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => _editReminderTime(r),
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(Icons.schedule_rounded, size: 18, color: tert),
+              ),
+            ),
+            const SizedBox(width: 4),
             Switch(
               value: r.enabled,
               activeColor: accent,
               onChanged: (v) async {
+                if (v && !kIsWeb) await notificationHelper.ensurePermissionIfNeeded();
                 await customReminderService.toggle(r, v);
                 await _load();
               },
@@ -219,6 +239,60 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
         ),
       ),
     );
+  }
+
+  /// 리마인더 목록에서 시간만 바로 수정 — 전체 폼(제목·주기 등) 안 열고 시각만.
+  Future<void> _editReminderTime(Reminder r) async {
+    int hour = r.notifyHour, minute = r.notifyMinute;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: Text('알릴 시각', style: AppTheme.sans(15, AppTheme.ink(ctx), weight: FontWeight.w700)),
+        content: SizedBox(
+          height: 140,
+          width: 200,
+          child: Row(
+            children: [
+              Expanded(
+                child: CupertinoPicker(
+                  itemExtent: 36,
+                  scrollController: FixedExtentScrollController(initialItem: hour),
+                  onSelectedItemChanged: (i) => hour = i,
+                  children: [
+                    for (int i = 0; i < 24; i++)
+                      Center(child: Text(i.toString().padLeft(2, '0'), style: AppTheme.sans(16, AppTheme.ink(ctx))))
+                  ],
+                ),
+              ),
+              Text(':', style: AppTheme.sans(16, AppTheme.ink(ctx))),
+              Expanded(
+                child: CupertinoPicker(
+                  itemExtent: 36,
+                  scrollController: FixedExtentScrollController(initialItem: minute),
+                  onSelectedItemChanged: (i) => minute = i,
+                  children: [
+                    for (int i = 0; i < 60; i++)
+                      Center(child: Text(i.toString().padLeft(2, '0'), style: AppTheme.sans(16, AppTheme.ink(ctx))))
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: Text('취소', style: AppTheme.sans(14, AppTheme.inkSecondary(ctx)))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: Text('저장', style: AppTheme.sans(14, AppTheme.accentColor(ctx), weight: FontWeight.w700))),
+        ],
+      ),
+    );
+    if (saved == true) {
+      await customReminderService.update(r.copyWith(notifyHour: hour, notifyMinute: minute));
+      await _load();
+    }
   }
 
   /// 이벤트 트리거형 기본 제공 알림 행(예산 알림·미기록 넛지) — 토글 + 시각 편집만 가능.
@@ -253,8 +327,13 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
               value: pref.enabled,
               activeColor: accent,
               onChanged: (v) async {
+                if (v && !kIsWeb) await notificationHelper.ensurePermissionIfNeeded();
                 await dbService.setEventReminderPref(key,
                     enabled: v, hour: pref.hour, minute: pref.minute);
+                if (key == 'recurring_expense_alert' && !kIsWeb) {
+                  await ReminderScheduler.scheduleRecurringExpenses(
+                      await dbService.getRecurringTemplates());
+                }
                 await _load();
               },
             ),
@@ -313,6 +392,10 @@ class _ReminderListScreenState extends State<ReminderListScreen> {
     );
     if (saved == true) {
       await dbService.setEventReminderPref(key, enabled: pref.enabled, hour: hour, minute: minute);
+      if (key == 'recurring_expense_alert' && !kIsWeb) {
+        await ReminderScheduler.scheduleRecurringExpenses(
+            await dbService.getRecurringTemplates());
+      }
       await _load();
     }
   }

@@ -5,6 +5,9 @@ class IncomeEntry {
   final int amount;
   final String memo;
   final String incomeType; // '급여', '프리랜서', '부수입', '기타'
+  /// 3.3% 원천징수 사업소득 여부. true면 [amount]는 실수령액(세후)이며,
+  /// 세전 금액·원천징수세액은 화면에서 파생 계산만 하고 별도 저장하지 않는다.
+  final bool isWithheld;
 
   IncomeEntry({
     required this.id,
@@ -13,6 +16,7 @@ class IncomeEntry {
     required this.amount,
     required this.memo,
     required this.incomeType,
+    this.isWithheld = false,
   });
 
   IncomeEntry copyWith({
@@ -22,6 +26,7 @@ class IncomeEntry {
     int? amount,
     String? memo,
     String? incomeType,
+    bool? isWithheld,
   }) {
     return IncomeEntry(
       id: id ?? this.id,
@@ -30,6 +35,7 @@ class IncomeEntry {
       amount: amount ?? this.amount,
       memo: memo ?? this.memo,
       incomeType: incomeType ?? this.incomeType,
+      isWithheld: isWithheld ?? this.isWithheld,
     );
   }
 }

@@ -20,7 +20,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _IncomeSource('3.3% 떼는 프리랜서 일', '사업소득 · 금액과 무관하게 5월 신고', _Cat.business),
     _IncomeSource('내 명의 사업장 운영', '사업소득 · 금액과 무관하게 5월 신고', _Cat.business),
     _IncomeSource('배달 · 대리 등 부수입', '사업소득 · 근로 외 2천만원↑ 건보료 추가', _Cat.business),
-    _IncomeSource('블로그 · 유튜브 수익', '기타소득 · 연 300만원 초과 시 합산과세', _Cat.business),
+    _IncomeSource('블로그 · 유튜브 수익', '기타소득 · 연 300만원 초과 시 종합과세', _Cat.business),
   ];
 
   final List<bool> _selected = List.filled(5, false);

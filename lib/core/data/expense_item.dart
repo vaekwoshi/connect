@@ -6,6 +6,8 @@ class ExpenseItem {
   final String content;
   final String category;       // 지출 카테고리: 음식/배달, 교통 등
   final String paymentMethod;  // 결제수단: 신용카드 | 체크+현금 | 기타
+  /// 사업경비 인정 여부 — 프리랜서·N잡러(사업소득) 대상. 카테고리와 별개인 독립 플래그.
+  final bool isBusiness;
 
   ExpenseItem({
     required this.id,
@@ -15,6 +17,7 @@ class ExpenseItem {
     required this.content,
     required this.category,
     this.paymentMethod = '기타',
+    this.isBusiness = false,
   });
 
   ExpenseItem copyWith({
@@ -25,6 +28,7 @@ class ExpenseItem {
     String? content,
     String? category,
     String? paymentMethod,
+    bool? isBusiness,
   }) {
     return ExpenseItem(
       id: id ?? this.id,
@@ -34,6 +38,7 @@ class ExpenseItem {
       content: content ?? this.content,
       category: category ?? this.category,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      isBusiness: isBusiness ?? this.isBusiness,
     );
   }
 }

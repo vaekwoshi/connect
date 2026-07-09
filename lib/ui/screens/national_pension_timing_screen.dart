@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class NationalPensionTimingScreen extends StatefulWidget {
   const NationalPensionTimingScreen({super.key});
@@ -160,6 +161,7 @@ class _NationalPensionTimingScreenState
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

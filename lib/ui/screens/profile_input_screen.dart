@@ -31,6 +31,7 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
   // 2. 거주 및 주택 관련
   bool _isHeadOfHousehold = false;
   String _residenceType = '전세';
+  bool _ownsCar = false;
 
   // 3. 가족 및 인적공제 관련
   bool _isMarried = false;
@@ -93,6 +94,8 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
           _residenceType = '월세';
           _isHeadOfHousehold = true;
         }
+        if (profile['owns_house'] == true) _residenceType = '자가';
+        _ownsCar = profile['owns_car'] == true;
         _hasElderly70Plus = profile['has_elderly_70plus'] == true;
         _isFemaleHead = profile['is_female_head'] == true;
         _isSingleParent = profile['is_single_parent'] == true;
@@ -144,6 +147,8 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
       'is_single_parent': _isSingleParent,
       'is_sme_employee': _isSmeEmployee,
       'sme_start_year': _smeStartDate?.year,
+      'owns_car': _ownsCar,
+      'owns_house': _residenceType == '자가',
     };
     await dbService.saveProfile(newProfile);
   }
@@ -618,6 +623,16 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
     }
 
     // Common
+    pages.add(_buildSelectionPage(
+      label: '자산',
+      title: '차량을\n보유하고 계신가요?',
+      subtitle: '자동차세 연납 등 차량 관련 알림 대상 여부를 판단해요.',
+      value: _ownsCar,
+      onChanged: (v) {
+        setState(() => _ownsCar = v);
+        Future.delayed(const Duration(milliseconds: 250), _nextPage);
+      },
+    ));
     pages.add(_buildSelectionPage(
       label: '배우자',
       title: '현재\n기혼이신가요?',

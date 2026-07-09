@@ -22,6 +22,10 @@ dependencies:
   syncfusion_flutter_pdf: ^28.1.33
   file_picker: ^8.1.6
   url_launcher: ^6.3.1
+  # 양식 탭 — 번들 PDF를 임시 파일로 내보내 공유
+  share_plus: ^10.1.4
+  path_provider: ^2.1.5
+  package_info_plus: ^9.0.1
 
 dev_dependencies:
   flutter_test:
@@ -34,6 +38,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/products.json
+    - assets/forms/
 
 # 앱 아이콘 — 갈색 도장(낙관) '세끌', 따뜻한 종이 바탕 #F4EFE6.
 # 생성: dart run flutter_launcher_icons

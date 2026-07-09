@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class IsaTaxBenefitsScreen extends StatefulWidget {
   const IsaTaxBenefitsScreen({super.key});
@@ -222,6 +223,7 @@ class _IsaTaxBenefitsScreenState extends State<IsaTaxBenefitsScreen> {
               '서민·농어민형: 직전 과세기간 근로·사업소득 3,800만원 이하.',
               '수익률과 실제 투자 결과는 다를 수 있으며, 참고용으로만 활용하세요.',
             ]),
+            const CalcDisclaimer(),
           ],
         ),
       ),

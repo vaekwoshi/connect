@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class LightCarFuelRefundScreen extends StatefulWidget {
   const LightCarFuelRefundScreen({super.key});
@@ -130,6 +131,7 @@ class _LightCarFuelRefundScreenState extends State<LightCarFuelRefundScreen> {
               '반드시 유류구매전용카드로 결제해야 환급되며, 일반 신용카드 결제분은 소급 환급되지 않습니다.',
               '2026.12.31까지 적용됩니다.',
             ], line, sub, ink),
+            const CalcDisclaimer(),
           ],
         ),
       ),

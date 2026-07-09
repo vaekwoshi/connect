@@ -81,6 +81,7 @@ class CombinedTaxCalculator {
     bool isSmeEmployee = false,
     int smeStartYear = 0,
     bool isYouthSme = false, // 청년 트랙(90%·5년) 여부 — 나이·군복무로 판정
+    bool useStandardExpenseRate = false, // true면 단순경비율 대신 기준경비율(적립 범위 산출용) — 사업소득에만 적용
   }) {
     final months = inputMonths < 1 ? 1 : (inputMonths > 12 ? 12 : inputMonths);
     final freelancerIncome = accumulatedFreelancerIncome < 0 ? 0.0 : accumulatedFreelancerIncome;
@@ -90,16 +91,19 @@ class CombinedTaxCalculator {
     final double laborIncomeAmount = grossIncome - laborDeduction;
 
     final double annualEstimatedFreelancerIncome = (freelancerIncome / months) * 12;
-    
+
     final occupation = OccupationData.occupations[occupationCode];
     final double simpleBaseRate = (occupation?.simpleBaseRate ?? 0.0) / 100.0;
     double simpleExcessRate = (occupation?.simpleExcessRate ?? 0.0) / 100.0;
     if (simpleExcessRate == 0.0) {
       simpleExcessRate = simpleBaseRate;
     }
-    
+    final double standardExpenseRate = (occupation?.standardRate ?? 0.0) / 100.0;
+
     double estimatedFreelancerExpense = 0.0;
-    if (annualEstimatedFreelancerIncome <= 40000000) {
+    if (useStandardExpenseRate) {
+      estimatedFreelancerExpense = annualEstimatedFreelancerIncome * standardExpenseRate;
+    } else if (annualEstimatedFreelancerIncome <= 40000000) {
       estimatedFreelancerExpense = annualEstimatedFreelancerIncome * simpleBaseRate;
     } else {
       estimatedFreelancerExpense = (40000000 * simpleBaseRate) +
@@ -291,6 +295,98 @@ class CombinedTaxCalculator {
       donationTaxCredit: donationTaxCreditAmt,
       weddingTaxCredit: weddingTaxCreditAmt,
     );
+  }
+
+  /// 단순경비율/기준경비율 두 가정을 각각 계산해 세금 적립 최소~최대 범위를 낸다.
+  /// (가계부 적립 카드용 — 사업소득 부분에만 경비율 차이가 영향을 준다.)
+  static ({CombinedTaxResult min, CombinedTaxResult max}) calculateTaxRange({
+    required double grossIncome,
+    required double accumulatedFreelancerIncome,
+    required int inputMonths,
+    required String occupationCode,
+    required double creditCard,
+    required double debitCardAndCash,
+    required double traditionalMarket,
+    required double publicTransport,
+    required double cultureExpense,
+    required int allowanceCount,
+    required double decidedTax,
+    required double monthlyRent,
+    double yellowUmbrellaPayment = 0.0,
+    bool isHomeless = false,
+    double pensionIncome = 0.0,
+    double otherIncome = 0.0,
+    double insurancePremium = 0.0,
+    double disabledInsurancePremium = 0.0,
+    int childrenCount8Plus = 0,
+    int newbornCount = 0,
+    double pensionSavings = 0.0,
+    double irpPayment = 0.0,
+    bool hasElderly70Plus = false,
+    bool isSingleParent = false,
+    bool isSingleFemaleHead = false,
+    double mortgageInterest = 0.0,
+    double hometownDonation = 0.0,
+    double infertilityMedical = 0.0,
+    double selfSeniorDisabledMedical = 0.0,
+    double otherDependentMedical = 0.0,
+    double generalDonation = 0.0,
+    double childrenEdu = 0.0,
+    int childrenEduCount = 0,
+    double collegeEdu = 0.0,
+    int collegeEduCount = 0,
+    bool weddingCredit2426 = false,
+    bool isSmeEmployee = false,
+    int smeStartYear = 0,
+    bool isYouthSme = false,
+  }) {
+    CombinedTaxResult run(bool useStandard) => calculateCombinedTax(
+          grossIncome: grossIncome,
+          accumulatedFreelancerIncome: accumulatedFreelancerIncome,
+          inputMonths: inputMonths,
+          occupationCode: occupationCode,
+          creditCard: creditCard,
+          debitCardAndCash: debitCardAndCash,
+          traditionalMarket: traditionalMarket,
+          publicTransport: publicTransport,
+          cultureExpense: cultureExpense,
+          allowanceCount: allowanceCount,
+          decidedTax: decidedTax,
+          monthlyRent: monthlyRent,
+          yellowUmbrellaPayment: yellowUmbrellaPayment,
+          isHomeless: isHomeless,
+          pensionIncome: pensionIncome,
+          otherIncome: otherIncome,
+          insurancePremium: insurancePremium,
+          disabledInsurancePremium: disabledInsurancePremium,
+          childrenCount8Plus: childrenCount8Plus,
+          newbornCount: newbornCount,
+          pensionSavings: pensionSavings,
+          irpPayment: irpPayment,
+          hasElderly70Plus: hasElderly70Plus,
+          isSingleParent: isSingleParent,
+          isSingleFemaleHead: isSingleFemaleHead,
+          mortgageInterest: mortgageInterest,
+          hometownDonation: hometownDonation,
+          infertilityMedical: infertilityMedical,
+          selfSeniorDisabledMedical: selfSeniorDisabledMedical,
+          otherDependentMedical: otherDependentMedical,
+          generalDonation: generalDonation,
+          childrenEdu: childrenEdu,
+          childrenEduCount: childrenEduCount,
+          collegeEdu: collegeEdu,
+          collegeEduCount: collegeEduCount,
+          weddingCredit2426: weddingCredit2426,
+          isSmeEmployee: isSmeEmployee,
+          smeStartYear: smeStartYear,
+          isYouthSme: isYouthSme,
+          useStandardExpenseRate: useStandard,
+        );
+    final simple = run(false);
+    final standard = run(true);
+    final lower = simple.annualTotalTax <= standard.annualTotalTax ? simple : standard;
+    final higher = simple.annualTotalTax <= standard.annualTotalTax ? standard : simple;
+    return (min: lower, max: higher);
   }
 
   /// 금융소득 비교과세 시뮬레이션 (소득세법 §62, 2025 귀속)

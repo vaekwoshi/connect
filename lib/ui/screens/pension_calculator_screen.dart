@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 import '../../core/data/db_helper.dart';
 import '../../core/tax_engine/employee_tax.dart';
 
@@ -85,12 +86,14 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
     final threshold = _isSalary ? 55000000.0 : 45000000.0;
     final rate = grossIncome <= threshold ? 0.165 : 0.132;
 
+    // 엔진은 국세 전용(15%/12%)을 반환 — 이 화면은 지방세 포함 총 절감액을 보여주므로 ×1.1.
     final credit = EmployeeTaxCalculator.calculatePensionAccountTaxCredit(
-      pensionSavingsPayment: savings,
-      retirementPensionPayment: irp,
-      grossIncome: grossIncome,
-      isSalariedIncome: _isSalary,
-    );
+          pensionSavingsPayment: savings,
+          retirementPensionPayment: irp,
+          grossIncome: grossIncome,
+          isSalariedIncome: _isSalary,
+        ) *
+        1.1;
 
     final hasInput = savings > 0 || irp > 0;
     // 추가 납입 여력 (합산 900만 한도까지)
@@ -218,6 +221,7 @@ class _PensionCalculatorScreenState extends State<PensionCalculatorScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

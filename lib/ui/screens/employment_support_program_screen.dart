@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class EmploymentSupportProgramScreen extends StatefulWidget {
   const EmploymentSupportProgramScreen({super.key});
@@ -173,6 +174,7 @@ class _EmploymentSupportProgramScreenState
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

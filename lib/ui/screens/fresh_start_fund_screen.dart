@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class FreshStartFundScreen extends StatefulWidget {
   const FreshStartFundScreen({super.key});
@@ -214,6 +215,7 @@ class _FreshStartFundScreenState extends State<FreshStartFundScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

@@ -21,6 +21,8 @@ const kGroupLabels = {
   'ev_subsidy': 'EV 보조금',
   'startup_academy': '청년창업사관학교',
   'kmove': 'K-Move 해외취업',
+  'property_tax': '재산세',
+  'comprehensive_tax': '종합부동산세',
 };
 
 const kGroupSchedules = {
@@ -34,6 +36,8 @@ const kGroupSchedules = {
   'ev_subsidy': '매년 2월 1일',
   'startup_academy': '매년 1월 10일',
   'kmove': '매년 2월 1일 · 8월 1일',
+  'property_tax': '7월 16일 · 9월 16일',
+  'comprehensive_tax': '매년 12월 1일',
 };
 
 /// 큐레이션된 시스템 알림 1건.
@@ -51,6 +55,8 @@ class SystemReminder {
   final int hour;          // 예약 시각(시)
   final bool employee;     // 직장인·N잡러 대상
   final bool business;     // 프리랜서·N잡러 대상
+  final bool requiresCar;   // 차량 보유자에게만 해당
+  final bool requiresHouse; // 주택 보유자에게만 해당
 
   const SystemReminder({
     required this.key,
@@ -66,13 +72,17 @@ class SystemReminder {
     this.hour = 9,
     this.employee = false,
     this.business = false,
+    this.requiresCar = false,
+    this.requiresHouse = false,
   });
 
   bool get isEvent => month == null || day == null;
 
-  bool appliesTo(String userType) {
+  bool appliesTo(String userType, {bool ownsCar = true, bool ownsHouse = true}) {
     final isEmp = userType == '직장인' || userType == 'N잡러';
     final isBiz = userType == '프리랜서' || userType == 'N잡러';
+    if (requiresCar && !ownsCar) return false;
+    if (requiresHouse && !ownsHouse) return false;
     return (employee && isEmp) || (business && isBiz);
   }
 }
@@ -194,6 +204,7 @@ const List<SystemReminder> kSystemReminderCatalog = [
     scheduleLabel: '매년 1월 16일',
     month: 1, day: 16,
     employee: true, business: true,
+    requiresCar: true,
   ),
   SystemReminder(
     key: 'sys_car_tax_mar',
@@ -206,6 +217,7 @@ const List<SystemReminder> kSystemReminderCatalog = [
     scheduleLabel: '매년 3월 16일',
     month: 3, day: 16,
     employee: true, business: true,
+    requiresCar: true,
   ),
   SystemReminder(
     key: 'sys_car_tax_jun',
@@ -218,6 +230,7 @@ const List<SystemReminder> kSystemReminderCatalog = [
     scheduleLabel: '매년 6월 16일',
     month: 6, day: 16,
     employee: true, business: true,
+    requiresCar: true,
   ),
   SystemReminder(
     key: 'sys_car_tax_sep',
@@ -230,6 +243,7 @@ const List<SystemReminder> kSystemReminderCatalog = [
     scheduleLabel: '매년 9월 16일',
     month: 9, day: 16,
     employee: true, business: true,
+    requiresCar: true,
   ),
   SystemReminder(
     key: 'sys_energy_voucher_start',
@@ -341,6 +355,44 @@ const List<SystemReminder> kSystemReminderCatalog = [
     business: true,
   ),
 
+  // ── 기한 (주택 보유자) ──
+  SystemReminder(
+    key: 'sys_property_tax_1',
+    notifId: 1018,
+    category: SysCategory.deadline,
+    group: 'property_tax',
+    title: '재산세 납부 기간이에요',
+    body: '7/16~7/31 — 주택분 재산세(1기분) 납부 기간이에요.',
+    scheduleLabel: '매년 7월 16일',
+    month: 7, day: 16,
+    employee: true, business: true,
+    requiresHouse: true,
+  ),
+  SystemReminder(
+    key: 'sys_property_tax_2',
+    notifId: 1019,
+    category: SysCategory.deadline,
+    group: 'property_tax',
+    title: '재산세 납부 기간이에요',
+    body: '9/16~9/30 — 주택분 재산세(2기분) 납부 기간이에요.',
+    scheduleLabel: '매년 9월 16일',
+    month: 9, day: 16,
+    employee: true, business: true,
+    requiresHouse: true,
+  ),
+  SystemReminder(
+    key: 'sys_comprehensive_tax',
+    notifId: 1020,
+    category: SysCategory.deadline,
+    group: 'comprehensive_tax',
+    title: '종합부동산세 납부 기간이에요',
+    body: '12/1~12/15 — 공시가격 합산 기준 종부세 납부 기간이에요.',
+    scheduleLabel: '매년 12월 1일',
+    month: 12, day: 1,
+    employee: true, business: true,
+    requiresHouse: true,
+  ),
+
   // ── 맞춤 (이벤트, 직장인·N잡러) ──
   SystemReminder(
     key: 'sys_threshold',
@@ -363,8 +415,11 @@ const List<SystemReminder> kSystemReminderCatalog = [
 ];
 
 /// 유형에 해당하는 시스템 알림만.
-List<SystemReminder> systemRemindersFor(String userType) =>
-    kSystemReminderCatalog.where((s) => s.appliesTo(userType)).toList();
+List<SystemReminder> systemRemindersFor(String userType,
+        {bool ownsCar = true, bool ownsHouse = true}) =>
+    kSystemReminderCatalog
+        .where((s) => s.appliesTo(userType, ownsCar: ownsCar, ownsHouse: ownsHouse))
+        .toList();
 
 SystemReminder? systemReminderByKey(String key) {
   for (final s in kSystemReminderCatalog) {

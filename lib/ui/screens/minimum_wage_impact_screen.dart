@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 /// 2025→2026 최저임금 인상(10,030원→10,320원, +290원/+2.9%)이
 /// 근로자 급여에 미치는 영향을 추정하는 계산기.
@@ -163,6 +164,7 @@ class _MinimumWageImpactScreenState extends State<MinimumWageImpactScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

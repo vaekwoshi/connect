@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 /// 주휴수당 · 최저임금 계산기 (2026년 기준)
 /// 최저임금: 10,320원/시간
@@ -309,6 +310,7 @@ class _WeeklyHolidayPayScreenState extends State<WeeklyHolidayPayScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/data/db_helper.dart';
 import '../../core/data/recurring_template.dart';
 import '../../core/data/expense_category.dart';
+import '../../core/notifications/reminder_scheduler.dart';
 import '../theme/app_theme.dart';
 
 const _pmCreditColor = Color(0xFF6B8FD4);
@@ -18,6 +20,9 @@ class RecurringTemplatesScreen extends StatefulWidget {
 
 class _RecurringTemplatesScreenState extends State<RecurringTemplatesScreen> {
   List<RecurringTemplate> _templates = [];
+  String _userType = '직장인';
+
+  bool get _isBusinessUser => _userType == '프리랜서' || _userType == 'N잡러';
 
   @override
   void initState() {
@@ -26,8 +31,15 @@ class _RecurringTemplatesScreenState extends State<RecurringTemplatesScreen> {
   }
 
   Future<void> _load() async {
+    final profile = await dbService.getProfile();
     final list = await dbService.getRecurringTemplates();
-    if (mounted) setState(() => _templates = list);
+    if (mounted) {
+      setState(() {
+        _userType = (profile?['user_type'] as String?) ?? '직장인';
+        _templates = list;
+      });
+    }
+    if (!kIsWeb) await ReminderScheduler.scheduleRecurringExpenses(list);
   }
 
   Color _pmColor(String pm) {
@@ -48,6 +60,7 @@ class _RecurringTemplatesScreenState extends State<RecurringTemplatesScreen> {
         text: existing != null ? '${existing.dayOfMonth}' : '');
     String category = existing?.category ?? '기타';
     String paymentMethod = existing?.paymentMethod ?? '기타';
+    bool isBusiness = existing?.isBusiness ?? false;
     final formKey = GlobalKey<FormState>();
 
     await showDialog(
@@ -220,6 +233,31 @@ class _RecurringTemplatesScreenState extends State<RecurringTemplatesScreen> {
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                         decoration: fieldDeco(hint: '미정이면 비워두기', suffix: '원'),
                       ),
+                      if (_isBusinessUser) ...[
+                        const SizedBox(height: 14),
+                        GestureDetector(
+                          onTap: () => setLocal(() => isBusiness = !isBusiness),
+                          behavior: HitTestBehavior.opaque,
+                          child: Row(
+                            children: [
+                              Icon(
+                                isBusiness
+                                    ? Icons.check_box_rounded
+                                    : Icons.check_box_outline_blank_rounded,
+                                size: 18,
+                                color: isBusiness ? accent : sub,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text('사업경비로 인정 (기본값)',
+                                    style: AppTheme.sans(14,
+                                        isBusiness ? ink : sub,
+                                        weight: FontWeight.w600)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 8),
                     ],
                   ),
@@ -242,6 +280,7 @@ class _RecurringTemplatesScreenState extends State<RecurringTemplatesScreen> {
                     paymentMethod: paymentMethod,
                     dayOfMonth: int.parse(dayCtrl.text),
                     sortOrder: existing?.sortOrder ?? _templates.length,
+                    isBusiness: isBusiness,
                   );
                   if (existing == null) {
                     await dbService.insertRecurringTemplate(t);
@@ -547,6 +586,17 @@ class _RecurringTemplatesScreenState extends State<RecurringTemplatesScreen> {
                       Text(t.paymentMethod,
                           style: AppTheme.sans(12, pmColor,
                               weight: FontWeight.w600)),
+                      if (t.isBusiness) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppTheme.line(context)),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Text('사업경비', style: AppTheme.sans(10, tert, weight: FontWeight.w600)),
+                        ),
+                      ],
                     ],
                   ),
                 ],

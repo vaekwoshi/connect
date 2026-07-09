@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:secul/core/tax_engine/employee_tax.dart';
 import 'package:secul/core/tax_engine/combined_tax.dart';
+import 'package:secul/core/tax_engine/freelancer_tax.dart';
 import 'package:secul/core/tax_engine/tax_rates.dart';
 
 /// 세끌 세금 엔진 검산 회귀테스트
@@ -591,6 +592,53 @@ void main() {
     test('np_cap_3: 건강보험은 상한 클램프 대상 아님(월급 비례 유지)', () {
       final ins = EmployeeTaxCalculator.calculateMonthlyInsurance(8000000);
       expect(ins.healthInsurance, TaxRates.truncateWon(8000000 * 0.03595));
+    });
+  });
+
+  // ──────────────────────────────────────────
+  // 세금 적립 min~max 범위 (단순경비율 vs 기준경비율)
+  // ──────────────────────────────────────────
+  group('프리랜서 세금 적립 범위', () {
+    test('range_1: 업종코드 011001(단순93.5% vs 기준9.7%) → min <= max', () {
+      final range = FreelancerTaxCalculator.calculateTaxRange(
+        accumulatedIncome: 60000000,
+        inputMonths: 6,
+        allowanceCount: 0,
+        occupationCode: '011001',
+      );
+      expect(range.min.annualTotalTax, lessThanOrEqualTo(range.max.annualTotalTax));
+      // 경비율 격차가 커서 두 시나리오 결과가 달라야 한다.
+      expect(range.min.annualTotalTax, isNot(equals(range.max.annualTotalTax)));
+    });
+
+    test('range_2: 미등록 업종코드(경비율 0%) → min == max(둘 다 경비 미인정)', () {
+      final range = FreelancerTaxCalculator.calculateTaxRange(
+        accumulatedIncome: 30000000,
+        inputMonths: 6,
+        allowanceCount: 0,
+        occupationCode: 'unknown_code',
+      );
+      expect(range.min.annualTotalTax, range.max.annualTotalTax);
+    });
+  });
+
+  group('N잡러 세금 적립 범위', () {
+    test('range_3: 업종코드 011001 사업소득 병행 → min <= max', () {
+      final range = CombinedTaxCalculator.calculateTaxRange(
+        grossIncome: 40000000,
+        accumulatedFreelancerIncome: 30000000,
+        inputMonths: 6,
+        occupationCode: '011001',
+        creditCard: 0,
+        debitCardAndCash: 0,
+        traditionalMarket: 0,
+        publicTransport: 0,
+        cultureExpense: 0,
+        allowanceCount: 0,
+        decidedTax: 0,
+        monthlyRent: 0,
+      );
+      expect(range.min.annualTotalTax, lessThanOrEqualTo(range.max.annualTotalTax));
     });
   });
 }

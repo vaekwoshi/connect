@@ -30,8 +30,12 @@ class _RecurringConfirmScreenState extends State<RecurringConfirmScreen> {
   final Map<int, TextEditingController> _amountCtrls = {};
   // 0=미확인(기본), 1=확인, 2=건너뜀 — pending(DB status==0) 항목에만 적용
   final Map<int, int> _localStatus = {};
+  final Map<int, bool> _localIsBusiness = {}; // 템플릿 기본값에서 개별 수정 시에만 존재
   bool _saving = false;
   bool _loaded = false;
+  String _userType = '직장인';
+
+  bool get _isBusinessUser => _userType == '프리랜서' || _userType == 'N잡러';
 
   final _fmt = NumberFormat('#,###');
 
@@ -74,6 +78,7 @@ class _RecurringConfirmScreenState extends State<RecurringConfirmScreen> {
   }
 
   Future<void> _load() async {
+    final profile = await dbService.getProfile();
     // 전체 상태(0/1/2) 로드 — 3가지 상태 시각화를 위해
     final confs = await dbService.getRecurringConfirmations(widget.year, widget.month);
     for (final item in confs) {
@@ -85,7 +90,13 @@ class _RecurringConfirmScreenState extends State<RecurringConfirmScreen> {
         _localStatus[t.id] ??= 0;
       }
     }
-    if (mounted) setState(() { _allItems = confs; _loaded = true; });
+    if (mounted) {
+      setState(() {
+        _userType = (profile?['user_type'] as String?) ?? '직장인';
+        _allItems = confs;
+        _loaded = true;
+      });
+    }
   }
 
   Future<void> _save() async {
@@ -118,6 +129,7 @@ class _RecurringConfirmScreenState extends State<RecurringConfirmScreen> {
           content: t.name,
           category: t.category,
           paymentMethod: t.paymentMethod,
+          isBusiness: _localIsBusiness[t.id] ?? t.isBusiness,
         ));
         await dbService.confirmRecurring(t.id, widget.year, widget.month,
             amount: amount, expenseId: expenseId);
@@ -403,6 +415,31 @@ class _RecurringConfirmScreenState extends State<RecurringConfirmScreen> {
                                 weight: FontWeight.w600)),
                       ],
                     ),
+                    if (_isBusinessUser && isPending) ...[
+                      const SizedBox(height: 4),
+                      GestureDetector(
+                        onTap: () => setState(() {
+                          _localIsBusiness[t.id] =
+                              !(_localIsBusiness[t.id] ?? t.isBusiness);
+                        }),
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              (_localIsBusiness[t.id] ?? t.isBusiness)
+                                  ? Icons.check_box_rounded
+                                  : Icons.check_box_outline_blank_rounded,
+                              size: 14,
+                              color: (_localIsBusiness[t.id] ?? t.isBusiness) ? accent : tert,
+                            ),
+                            const SizedBox(width: 4),
+                            Text('사업경비로 인정',
+                                style: AppTheme.sans(11, tert, weight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class MonthlyRentTaxCreditScreen extends StatefulWidget {
   const MonthlyRentTaxCreditScreen({super.key});
@@ -170,6 +171,7 @@ class _MonthlyRentTaxCreditScreenState
               '총급여 5,500만원 이하 → 17%, 초과(~8,000만원) → 12% 공제.',
               '이 계산기는 참고용이며 정확한 공제액은 세무사에게 확인하세요.',
             ]),
+            const CalcDisclaimer(),
           ],
         ),
       ),

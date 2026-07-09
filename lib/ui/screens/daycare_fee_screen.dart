@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class DaycareFeeScreen extends StatefulWidget {
   const DaycareFeeScreen({super.key});
@@ -153,6 +154,7 @@ class _DaycareFeeScreenState extends State<DaycareFeeScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

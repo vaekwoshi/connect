@@ -5,7 +5,7 @@ import 'pension_calculator_screen.dart';
 import 'insurance_premium_screen.dart';
 import 'dependent_deduction_screen.dart';
 import 'financial_income_screen.dart';
-import 'freelancer_book_screen.dart';
+import 'withholding_calc_screen.dart';
 import 'four_insurance_screen.dart';
 import 'weekly_holiday_pay_screen.dart';
 import 'severance_pay_screen.dart';
@@ -26,6 +26,7 @@ import 'housing_subscription_screen.dart';
 import 'acquisition_tax_screen.dart';
 import 'capital_gains_tax_screen.dart';
 import 'inheritance_gift_tax_screen.dart';
+import 'property_tax_screen.dart';
 import 'youth_leap_account_screen.dart';
 import 'youth_housing_dream_screen.dart';
 import 'naeil_chaeum_screen.dart';
@@ -77,7 +78,7 @@ final _categories = <_CalcCategory>[
     _Calc(name: '4대 보험료', desc: '국민연금·건강보험·고용보험 보험료 산출', builder: (_) => const FourInsuranceScreen()),
     _Calc(name: '퇴직금', desc: '평균임금 기준 퇴직금 예상액 계산', builder: (_) => const SeverancePayScreen()),
     _Calc(name: '주휴수당 · 최저임금', desc: '아르바이트·단시간 근로 주휴수당 산정', builder: (_) => const WeeklyHolidayPayScreen()),
-    _Calc(name: '프리랜서 간편장부', desc: '3.3% 원천징수 소득·경비 계산', builder: (_) => const FreelancerBookScreen()),
+    _Calc(name: '3.3% 원천징수 계산기', desc: '계약금액에서 원천징수세액·실수령액 계산', builder: (_) => const WithholdingCalcScreen()),
     _Calc(name: '실업급여', desc: '고용보험 가입기간·임금 기준 수급액 추정', builder: (_) => const UnemploymentBenefitScreen()),
     _Calc(name: '국민연금 조기·연기', desc: '수령 시기별 연금액 변화 비교', builder: (_) => const NationalPensionTimingScreen()),
     _Calc(name: '퇴직연금', desc: 'DB형·DC형 퇴직급여 예상액 비교', builder: (_) => const RetirementPensionScreen()),
@@ -113,7 +114,7 @@ final _categories = <_CalcCategory>[
     _Calc(name: '취득세', desc: '주택 가격·취득 목적별 취득세율 계산', builder: (_) => const AcquisitionTaxScreen()),
     _Calc(name: '양도소득세', desc: '보유기간·1가구1주택 여부 기준 양도세 추정', builder: (_) => const CapitalGainsTaxScreen()),
     _Calc(name: '상속·증여세', desc: '공제 적용 후 세율 구간별 세액 계산', builder: (_) => const InheritanceGiftTaxScreen()),
-    const _Calc(name: '종부세·재산세', desc: '공시지가·세율 기준 보유세 추정'),
+    _Calc(name: '종부세·재산세', desc: '공시지가·세율 기준 보유세 추정', builder: (_) => const PropertyTaxScreen()),
   ]),
   _CalcCategory(label: '청년 · 장병', items: [
     _Calc(name: '청년도약계좌', desc: '소득 구간별 정부기여금 포함 5년 만기액 추정', builder: (_) => const YouthLeapAccountScreen()),

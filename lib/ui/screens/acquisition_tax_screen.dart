@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class AcquisitionTaxScreen extends StatefulWidget {
   const AcquisitionTaxScreen({super.key});
@@ -269,6 +270,7 @@ class _AcquisitionTaxScreenState extends State<AcquisitionTaxScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

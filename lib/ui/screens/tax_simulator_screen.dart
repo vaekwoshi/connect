@@ -10,7 +10,7 @@ import '../../core/parsing/pension_income_parser.dart';
 import '../../core/tax_engine/freelancer_tax.dart';
 import '../../core/tax_engine/combined_tax.dart';
 import '../../core/tax_engine/employee_tax.dart';
-import 'freelancer_book_screen.dart' as freelancer_book;
+import 'expense_calendar_screen.dart';
 import 'tax_report_form_screen.dart';
 
 class TaxSimulatorScreen extends StatefulWidget {
@@ -898,7 +898,7 @@ class _TaxSimulatorScreenState extends State<TaxSimulatorScreen> {
       Navigator.push(
         context,
         PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => const freelancer_book.FreelancerBookScreen(),
+          pageBuilder: (context, animation, secondaryAnimation) => const ExpenseCalendarScreen(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             const begin = Offset(1.0, 0.0);
             const end = Offset.zero;

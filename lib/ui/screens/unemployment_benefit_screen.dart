@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 /// 실업급여(구직급여) 계산기
 /// 일액 = 평균임금 × 60%, 하한 66,048원, 상한 68,100원
@@ -294,6 +295,7 @@ class _UnemploymentBenefitScreenState
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

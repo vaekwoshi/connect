@@ -165,8 +165,7 @@ class EmployeeTaxCalculator {
     double eligibleTotal = eligibleSavings + retirementPensionPayment;
     if (eligibleTotal > 9000000.0) eligibleTotal = 9000000.0;
     final double threshold = isSalariedIncome ? 55000000.0 : 45000000.0;
-    // 지방소득세 포함: 15%×1.1=16.5% / 12%×1.1=13.2%
-    final double rate = grossIncome <= threshold ? 0.165 : 0.132;
+    final double rate = grossIncome <= threshold ? 0.15 : 0.12;
     return TaxRates.truncateWon(eligibleTotal * rate);
   }
 

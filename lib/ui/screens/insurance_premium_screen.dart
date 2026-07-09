@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../components/amount_field.dart';
 
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 import '../../core/tax_engine/employee_tax.dart';
 
 /// 보험료 세액공제 계산기
@@ -189,6 +190,7 @@ class _InsurancePremiumScreenState extends State<InsurancePremiumScreen> {
                 ],
               ),
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

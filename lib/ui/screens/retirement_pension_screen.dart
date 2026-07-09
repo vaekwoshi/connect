@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class RetirementPensionScreen extends StatefulWidget {
   const RetirementPensionScreen({super.key});
@@ -136,6 +137,7 @@ class _RetirementPensionScreenState extends State<RetirementPensionScreen> {
               sub,
               ink,
             ),
+            const CalcDisclaimer(),
           ],
         ),
       ),

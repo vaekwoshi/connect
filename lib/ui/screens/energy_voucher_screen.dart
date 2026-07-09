@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
+import '../components/calc_disclaimer.dart';
 
 class EnergyVoucherScreen extends StatefulWidget {
   const EnergyVoucherScreen({super.key});
@@ -136,6 +137,7 @@ class _EnergyVoucherScreenState extends State<EnergyVoucherScreen> {
               '겨울 바우처는 한국에너지재단 등유 지원과 중복 수급이 불가합니다.',
               '미사용 잔액은 이월·환급되지 않고 소멸됩니다.',
             ], line, sub, ink),
+            const CalcDisclaimer(),
           ],
         ),
       ),
