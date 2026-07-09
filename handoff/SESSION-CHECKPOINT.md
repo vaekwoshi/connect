@@ -5,9 +5,16 @@
 
 ## Where We Stopped
 
-Step 1(`bbc7d75`)·Step 2(`2185ce6`) 완료 후, 가계부 유형별(직장인/N잡러/프리랜서) 분기가 코드 곳곳에 흩어져 "고칠 때마다 이상해진다"는 문제 제기로 리팩터 착수.
-**Step 3 완료·커밋(`12cca53`)** — `lib/core/data/ledger_profile.dart` 신설, `LedgerProfile.of(userType)`를 단일 진실 원천으로 삼아 `day_entry_screen.dart`·`expense_calendar_screen.dart`의 흩어진 `userType == '프리랜서'`류 분기를 전부 profile 필드 참조로 교체(동작 동치 확인, 회귀 53건 통과). `home_screen.dart`는 의도적으로 범위 밖(KG-9).
-**Step 4(화면 크롬 7층→4층, `ARCHITECT-BRIEF.md`에 계획 있음) 착수 시도 → BLOCKED.** `flutter build web` + 프리뷰까지 띄웠으나 Flutter 웹이 캔버스 렌더라 프리뷰 도구로 3유형 가계부 화면에 클릭 내비게이션 불가(스크린샷만 가능) — 레이아웃이 실제로 바뀌는 작업이라 시각 검증 없이 진행 안 함. 사용자가 "다음 세션에서 재개(b)"를 선택해 코드 변경 없이 세션 종료.
+Step 1(`bbc7d75`)·Step 2(`2185ce6`)·Step 3(`12cca53`, LedgerProfile 도입)에 이어 **Step 4 완료·커밋(`872a7ea` 적립카드 접힘, `d4ad494` 목록탭 제거+AppBar 통합+하단바)**.
+`/grilling` 세션으로 사용자와 가계부 캘린더 화면 구조를 처음부터 다시 설계: 목록 탭 폐지(월 라벨 탭으로 대체, `month_list_screen.dart`), 카드·월급·고정지출을 AppBar "관리" 아이콘 하나로 통합(`payment_management_screen.dart`), 뷰탭(달력/분석/연간)+범례를 `bottomNavigationBar`로 이동. 캘린더 위 크롬이 7층→월네비+요약바(+접힌 적립카드)로 축소.
+**시각 검증 툴링 문제 해결됨**: Flutter 웹 접근성 트리는 단순 DOM `.click()`이 아니라 실제 `PointerEvent(pointerdown/up)`로 `flt-semantics-placeholder`를 클릭해야 열린다 — 이후 전 화면 클릭 내비게이션·스크린샷 검증 가능. 직장인·프리랜서 양쪽에서 가계부→관리 화면→월 목록 화면까지 실측 확인 완료.
+
+## 다음 세션에서 시각 검증 재개하는 법
+
+1. `flutter build web --no-tree-shake-icons` → `sekkeul-web` 프리뷰(port 3000) 시작/재사용
+2. `preview_eval`로 `flt-semantics-placeholder`(없으면 `flt-glass-pane`)에 실제 `PointerEvent('pointerdown'/'pointerup')` + `MouseEvent('click')`를 그 요소의 bounding-rect 중심 좌표로 디스패치 — 이러면 접근성 시맨틱 트리가 열림
+3. 이후 `document.querySelectorAll('flt-semantics[role="button"]')`에서 텍스트로 버튼을 찾아 같은 방식(pointerdown/up+click, `document.elementFromPoint`로 실제 클릭 대상 확정)으로 클릭 — `preview_click`(선택자 클릭)은 Flutter 캔버스 위에서 안 먹으므로 `preview_eval` 경유가 정석
+4. 전체 리로드(`window.location.reload()`) 후에는 접근성 트리가 초기화되므로 2번부터 다시
 
 ---
 
