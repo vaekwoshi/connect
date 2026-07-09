@@ -80,6 +80,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
   int _expenseTarget = 0;
   Map<int, int> _annualIncome = {}; // month(1~12) → 수입 합계
   ReserveEstimate? _reserveEstimate; // 프리랜서·N잡러 + 이번 달일 때만 채워짐
+  bool _reserveCardExpanded = false; // 기본 접힘 — 캘린더 위 크롬 최소화
 
   // 핀치 줌 — 1단계(기본 7열) · 2단계(가로 2배 폭, 세로 동일).
   int _zoomLevel = 1;
@@ -1081,6 +1082,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
 
   /// 프리랜서·N잡러 전용 — 이번 달 세금·4대보험 적립(예상)과 지금 써도 되는 돈.
   /// 저장 없이 그 자리에서 재계산(가계부 기록 + 프로필 최신값 기준) — 과거 달엔 노출하지 않는다.
+  /// 기본 접힘(요약 1줄) — 캘린더 위 크롬을 줄이기 위해 탭해야 상세가 펼쳐진다.
   Widget _buildReserveCard(Color ink, Color sub) {
     final r = _reserveEstimate!;
     String won(double v) => '${_fmt.format(v.round())}원';
@@ -1089,7 +1091,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         border: Border.all(color: AppTheme.line(context), width: 1),
         borderRadius: BorderRadius.circular(4),
@@ -1097,46 +1098,71 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Icon(Icons.savings_outlined, size: 16, color: sub),
-            const SizedBox(width: 6),
-            Text('이번 달 세금·보험 적립(예상)', style: AppTheme.sans(13, sub, weight: FontWeight.w600)),
-          ]),
-          const SizedBox(height: 12),
-          _reserveRow('세금으로 미리 모아둘 돈', range(r.minMonthlyTaxReserve, r.maxMonthlyTaxReserve), ink, sub),
-          const SizedBox(height: 6),
-          _reserveRow('보험료로 대비할 돈', won(r.insuranceReserve), ink, sub),
-          const SizedBox(height: 10),
-          AppTheme.hairline(context),
-          const SizedBox(height: 10),
-          _reserveRow('지금 써도 되는 돈', range(r.minUsable, r.maxUsable), ink, sub, emphasize: true),
-          if (!r.hasOccupationCode) ...[
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: _openProfileForReserve,
-              behavior: HitTestBehavior.opaque,
+          GestureDetector(
+            onTap: () => setState(() => _reserveCardExpanded = !_reserveCardExpanded),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
               child: Row(children: [
-                Icon(Icons.info_outline_rounded, size: 13, color: AppTheme.accentColor(context)),
+                Icon(Icons.savings_outlined, size: 16, color: sub),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text('업종코드를 설정하면 더 정확해져요',
-                      style: AppTheme.sans(12, AppTheme.accentColor(context), weight: FontWeight.w600)),
+                  child: Text('이번 달 세금·보험 적립(예상)',
+                      style: AppTheme.sans(13, sub, weight: FontWeight.w600)),
                 ),
-                Icon(Icons.chevron_right_rounded, size: 16, color: AppTheme.accentColor(context)),
+                if (!_reserveCardExpanded) ...[
+                  Text(range(r.minUsable, r.maxUsable),
+                      style: AppTheme.sans(13, ink, weight: FontWeight.w800)),
+                  const SizedBox(width: 4),
+                ],
+                Icon(_reserveCardExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                    size: 18, color: sub),
               ]),
             ),
-          ] else ...[
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: _openProfileForReserve,
-              behavior: HitTestBehavior.opaque,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.tune_rounded, size: 13, color: sub),
-                const SizedBox(width: 6),
-                Text('프로필 수정', style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
-              ]),
+          ),
+          if (_reserveCardExpanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _reserveRow('세금으로 미리 모아둘 돈', range(r.minMonthlyTaxReserve, r.maxMonthlyTaxReserve), ink, sub),
+                  const SizedBox(height: 6),
+                  _reserveRow('보험료로 대비할 돈', won(r.insuranceReserve), ink, sub),
+                  const SizedBox(height: 10),
+                  AppTheme.hairline(context),
+                  const SizedBox(height: 10),
+                  _reserveRow('지금 써도 되는 돈', range(r.minUsable, r.maxUsable), ink, sub, emphasize: true),
+                  if (!r.hasOccupationCode) ...[
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: _openProfileForReserve,
+                      behavior: HitTestBehavior.opaque,
+                      child: Row(children: [
+                        Icon(Icons.info_outline_rounded, size: 13, color: AppTheme.accentColor(context)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text('업종코드를 설정하면 더 정확해져요',
+                              style: AppTheme.sans(12, AppTheme.accentColor(context), weight: FontWeight.w600)),
+                        ),
+                        Icon(Icons.chevron_right_rounded, size: 16, color: AppTheme.accentColor(context)),
+                      ]),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: _openProfileForReserve,
+                      behavior: HitTestBehavior.opaque,
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.tune_rounded, size: 13, color: sub),
+                        const SizedBox(width: 6),
+                        Text('프로필 수정', style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
+                      ]),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ],
         ],
       ),
     );

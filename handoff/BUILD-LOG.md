@@ -5,18 +5,32 @@
 
 ## Current Status
 
-**Active step:** Step 3 COMPLETE (커밋 `12cca53`). Step 4(화면 크롬 정리) 착수했으나 시각 검증 툴링 막힘 — 아래 참고.
-**Last cleared:** Step 3 — 2026-07-10, 커밋 `12cca53`
+**Active step:** Step 4a(적립카드 접이식) BUILT & 시각 검증 완료. Step 4b/4c(범례·뷰탭 정리)는 미착수.
+**Last cleared:** Step 4a — 2026-07-10
 **Pending deploy:** NO (프로덕션 배포/APK 빌드 없음)
 
 ---
 
 ## Step History
 
-### Step 4 — 가계부 화면 크롬 7층→4층 — BLOCKED (시각 검증 툴링)
+### Step 4a — 세금·보험 적립카드 기본 접힘 — COMPLETE (시각 검증 완료)
 *Date: 2026-07-10*
 
-착수해 `flutter build web` + `sekkeul-web` 프리뷰까지 띄웠으나, **Flutter 웹이 캔버스 렌더라 프리뷰 도구로 UI 클릭 내비게이션 불가**("Enable accessibility" 시맨틱 트리도 안 열림). 스크린샷은 되지만 3유형(직장인/N잡러/프리랜서) 가계부 화면으로 이동해 전후 비교하는 검증 루프를 이 환경에서 돌릴 수 없음. 레이아웃이 실제 바뀌는 작업이라 눈으로 확인 없이 진행하면 회귀 위험 → **코드 변경 착수 안 함, 보류.** 계획은 ARCHITECT-BRIEF Step 4에 있음(결제수단 스트립+범례 통합, 적립카드 기본 접힘, 뷰탭 정리). 재개 옵션: (a) `flutter run`(디바이스/에뮬레이터)로 사용자가 라이브 확인, (b) 검증 가능한 세션에서 재개.
+처음엔 Flutter 웹 캔버스 렌더 때문에 프리뷰 도구로 클릭 내비게이션이 안 되는 줄 알았으나, `flt-semantics-placeholder`를 실제 PointerEvent(pointerdown/up)로 클릭하면 접근성 시맨틱 트리가 정상적으로 열려 이후 모든 버튼에 실제 클릭 내비게이션이 가능함을 확인(단순 DOM `.click()`이 아니라 pointer 이벤트가 필요했음). 이 방법으로 3유형 전환·가계부 진입·적립카드 펼침/접힘까지 전부 스크린샷으로 실측 검증.
+
+Files changed:
+- `lib/ui/screens/expense_calendar_screen.dart` — `_reserveCardExpanded` 상태 추가(기본 false). `_buildReserveCard`를 헤더(아이콘+라벨+접혔을 때 "지금 써도 되는 돈" 요약값+shevron)를 탭하면 펼쳐지는 구조로 재작성. 펼쳤을 때 내용(세금/보험/지금 써도 되는 돈/업종코드 안내)은 기존과 동일.
+
+Verification: `flutter analyze`/`flutter test` 클린(53건 통과). **웹 프리뷰로 실제 확인**: 프리랜서 유형 진입 시 접힌 카드가 "이번 달 세금·보험 적립(예상)  0원 ⌄" 한 줄로 축소됨을 스크린샷 확인, 탭 시 기존 4줄 상세로 정상 펼쳐짐 확인.
+Reviewer findings: 셀프 리뷰 — 변경이 국소적(단일 위젯 메서드 + 상태 필드 1개)이라 Must Fix 없음.
+Deploy: NO
+
+### Step 4b/4c(범례 통합, 뷰탭 정리) — 미착수, 다음으로 보류(사용자 확인 후)
+
+### Step 4 — 가계부 화면 크롬 7층→4층 — 원래 BLOCKED로 기록했던 시각 검증 문제는 위 4a에서 해결됨(기록 보존용)
+*Date: 2026-07-10*
+
+~~착수해 `flutter build web` + `sekkeul-web` 프리뷰까지 띄웠으나, **Flutter 웹이 캔버스 렌더라 프리뷰 도구로 UI 클릭 내비게이션 불가**~~ → 해결됨, 위 4a 참고.
 
 ### Step 3 — LedgerProfile 도입: 흩어진 userType 분기 통합 — COMPLETE (커밋 `12cca53`)
 *Date: 2026-07-10*
