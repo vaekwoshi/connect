@@ -1431,6 +1431,77 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     '보험/금융': '보험료 세액공제 (12%)',
   };
 
+  /// 지출 목표 설정/수정 — 분석 탭에서 직접 입력. 홈 화면은 표시 전용이라
+  /// 목표를 정하는 곳은 여기 하나뿐이다.
+  Future<void> _showExpenseTargetDialog() async {
+    final ctrl = TextEditingController(
+      text: _expenseTarget > 0 ? _fmt.format(_expenseTarget) : '');
+    final ink = AppTheme.ink(context);
+    final accent = AppTheme.accentColor(context);
+    final bg = AppTheme.backgroundColor(context);
+    final line = AppTheme.line(context);
+    final sub = AppTheme.inkSecondary(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: line),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          title: Text('이달 지출 목표', style: AppTheme.serif(17, ink)),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            style: AppTheme.sans(15, ink),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: '예: 1,500,000',
+              hintStyle: AppTheme.sans(15, AppTheme.inkTertiary(ctx)),
+              suffixText: '원',
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              border: UnderlineInputBorder(borderSide: BorderSide(color: line)),
+              enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: line)),
+              focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: accent, width: 1.5)),
+            ),
+            onChanged: (v) {
+              final n = v.replaceAll(RegExp(r'[^0-9]'), '');
+              final f = n.isEmpty ? '' : _fmt.format(int.parse(n));
+              ctrl.value = TextEditingValue(text: f, selection: TextSelection.collapsed(offset: f.length));
+            },
+          ),
+          actions: [
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 0, 8, 12),
+                child: Text('취소', style: AppTheme.sans(14, sub)),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx, true),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                child: Text('저장', style: AppTheme.sans(14, accent, weight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    final val = double.tryParse(ctrl.text.replaceAll(',', '')) ?? 0.0;
+    ctrl.dispose();
+    if (confirmed != true || !mounted) return;
+    await dbService.setProfileTypeValues(_userType, expenseTarget: val);
+    if (mounted) setState(() => _expenseTarget = val.toInt());
+  }
+
   Widget _buildAnalysisView(Color ink, Color sub) {
     final tert = AppTheme.inkTertiary(context);
     final accent = AppTheme.accentColor(context);
@@ -1501,7 +1572,20 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
 
         // ── D. 지출 목표 ──────────────────────────────────
         const SizedBox(height: 20),
-        Text('지출 목표'.toUpperCase(), style: AppTheme.label(context)),
+        Row(children: [
+          Text('지출 목표'.toUpperCase(), style: AppTheme.label(context)),
+          const Spacer(),
+          GestureDetector(
+            onTap: _showExpenseTargetDialog,
+            behavior: HitTestBehavior.opaque,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.tune_rounded, size: 13, color: accent),
+              const SizedBox(width: 4),
+              Text(_expenseTarget > 0 ? '수정' : '설정',
+                  style: AppTheme.sans(12, accent, weight: FontWeight.w600)),
+            ]),
+          ),
+        ]),
         const SizedBox(height: 10),
         if (_expenseTarget > 0)
           _analysisSimpleBar(
@@ -1517,7 +1601,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
             ink: ink, sub: sub,
           )
         else
-          Text('홈 화면에서 이달 지출 목표를 설정하면 달성률을 여기서 확인할 수 있어요.',
+          Text('이달 지출 목표를 설정하면 달성률을 여기서 확인할 수 있어요.',
               style: AppTheme.sans(13, tert, height: 1.5)),
         const SizedBox(height: 20),
         AppTheme.hairline(context),

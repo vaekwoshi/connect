@@ -86,10 +86,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // 홈 세무 도구 아코디언 — 접힘 기본(리마인더 카드와 동일 패턴)
   bool _taxToolsExpanded = false;
 
-  // 홈 인라인 지출 목표 입력
-  bool _showExpenseInput = false;
-  final TextEditingController _expenseTargetInlineCtrl = TextEditingController();
-
   bool get _isEmployee => _userType == '직장인' || _userType == 'N잡러';
 
   final _numberFormat = NumberFormat('#,###');
@@ -530,7 +526,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _monthsController.dispose();
     _yellowUmbrellaController.dispose();
     _grossIncomeInlineCtrl.dispose();
-    _expenseTargetInlineCtrl.dispose();
     _bannerTimer?.cancel();
     super.dispose();
   }
@@ -952,8 +947,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ]),
         ],
 
-        // ── 지출 목표 진행 + 수정 ──
-        if (hasBudget && !_showExpenseInput) ...[
+        // ── 지출 목표 진행 (표시 전용 — 목표는 가계부에서 설정) ──
+        if (hasBudget) ...[
           const SizedBox(height: 14),
           _progressBlock(
             '지출 목표 ${_toWon(budget)}',
@@ -965,16 +960,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 : underBudget && totalSpent > 0
                     ? '목표 대비 ${_toWon(budget - totalSpent)} 절약 중이에요.'
                     : '지출을 추가해보세요.',
-            onEdit: () {
-              _expenseTargetInlineCtrl.text = _numberFormat.format(_expenseTarget.toInt());
-              setState(() => _showExpenseInput = true);
-            },
           ),
         ],
-        // ── 지출 목표 설정 프롬프트 (목표 없음) 또는 인라인 수정 ──
-        if (!hasBudget || _showExpenseInput) ...[
+        // ── 지출 목표 설정 프롬프트 (목표 없음 — 탭하면 가계부로 이동) ──
+        if (!hasBudget) ...[
           const SizedBox(height: 12),
-          _buildExpensePromptOrInput(ink, sub, accent),
+          _buildExpenseTargetPrompt(ink, sub, accent),
         ],
 
         // ── 신용카드 공제 문턱 ──
@@ -1023,32 +1014,33 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 지출 목표 프롬프트 → 탭 시 인라인 입력 전환 (높이 고정)
-  Widget _buildExpensePromptOrInput(Color ink, Color sub, Color accent) {
-    return _inlinePrompt(
-      expanded: _showExpenseInput,
-      promptText: '이번 달 지출 목표액을 설정하면 공제 기준을 잡아드려요',
-      hintText: '이번 달 지출 목표',
-      controller: _expenseTargetInlineCtrl,
-      ink: ink, sub: sub, accent: accent,
-      onTapBanner: () {
-        _expenseTargetInlineCtrl.text =
-            _expenseTarget > 0 ? _numberFormat.format(_expenseTarget.toInt()) : '';
-        setState(() => _showExpenseInput = true);
-      },
-      onApply: () async {
-        final val = double.tryParse(_expenseTargetInlineCtrl.text.replaceAll(',', '')) ?? 0.0;
-        if (val > 0) {
-          setState(() {
-            _expenseTarget = val;
-            _savingGoalController.text = _numberFormat.format(val.toInt());
-            _showExpenseInput = false;
-          });
-          await dbService.setProfileTypeValues(_userType, expenseTarget: val);
-        } else {
-          setState(() => _showExpenseInput = false);
-        }
-      },
+  /// 지출 목표 설정 안내 배너 — 목표는 가계부에서 설정하므로 탭하면 가계부로 이동.
+  Widget _buildExpenseTargetPrompt(Color ink, Color sub, Color accent) {
+    const h = 48.0;
+    return GestureDetector(
+      onTap: () => _go(const ExpenseCalendarScreen()),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: h,
+        decoration: BoxDecoration(
+          color: AppTheme.surface(context),
+          border: Border.all(color: AppTheme.line(context), width: 1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(children: [
+          Container(width: 3, height: h, color: accent),
+          const SizedBox(width: 12),
+          Expanded(child: Text(
+            '가계부에서 이번 달 지출 목표를 설정해보세요',
+            style: AppTheme.sans(12, AppTheme.inkSecondary(context), weight: FontWeight.w500),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          )),
+          const SizedBox(width: 8),
+          Icon(Icons.arrow_forward, color: accent, size: 15),
+          const SizedBox(width: 14),
+        ]),
+      ),
     );
   }
 
