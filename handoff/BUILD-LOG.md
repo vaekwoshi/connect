@@ -5,15 +5,20 @@
 
 ## Current Status
 
-**Active step:** Step 3 — BUILT (day_entry·calendar 마이그레이션 완료, home 의도적 보류). 시각 검증(3유형 프리뷰) 및 커밋 대기.
-**Last cleared:** Step 2 — 2026-07-10, 커밋 `2185ce6`
+**Active step:** Step 3 COMPLETE (커밋 `12cca53`). Step 4(화면 크롬 정리) 착수했으나 시각 검증 툴링 막힘 — 아래 참고.
+**Last cleared:** Step 3 — 2026-07-10, 커밋 `12cca53`
 **Pending deploy:** NO (프로덕션 배포/APK 빌드 없음)
 
 ---
 
 ## Step History
 
-### Step 3 — LedgerProfile 도입: 흩어진 userType 분기 통합 — BUILT (시각 검증 대기)
+### Step 4 — 가계부 화면 크롬 7층→4층 — BLOCKED (시각 검증 툴링)
+*Date: 2026-07-10*
+
+착수해 `flutter build web` + `sekkeul-web` 프리뷰까지 띄웠으나, **Flutter 웹이 캔버스 렌더라 프리뷰 도구로 UI 클릭 내비게이션 불가**("Enable accessibility" 시맨틱 트리도 안 열림). 스크린샷은 되지만 3유형(직장인/N잡러/프리랜서) 가계부 화면으로 이동해 전후 비교하는 검증 루프를 이 환경에서 돌릴 수 없음. 레이아웃이 실제 바뀌는 작업이라 눈으로 확인 없이 진행하면 회귀 위험 → **코드 변경 착수 안 함, 보류.** 계획은 ARCHITECT-BRIEF Step 4에 있음(결제수단 스트립+범례 통합, 적립카드 기본 접힘, 뷰탭 정리). 재개 옵션: (a) `flutter run`(디바이스/에뮬레이터)로 사용자가 라이브 확인, (b) 검증 가능한 세션에서 재개.
+
+### Step 3 — LedgerProfile 도입: 흩어진 userType 분기 통합 — COMPLETE (커밋 `12cca53`)
 *Date: 2026-07-10*
 
 Files changed:
