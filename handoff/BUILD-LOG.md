@@ -5,13 +5,29 @@
 
 ## Current Status
 
-**Active step:** Step 2 — CLEAR, awaiting Project Owner go-ahead to commit
-**Last cleared:** Step 1 — 2026-07-10, 커밋 `bbc7d75`
+**Active step:** Step 3 — BUILT (day_entry·calendar 마이그레이션 완료, home 의도적 보류). 시각 검증(3유형 프리뷰) 및 커밋 대기.
+**Last cleared:** Step 2 — 2026-07-10, 커밋 `2185ce6`
 **Pending deploy:** NO (프로덕션 배포/APK 빌드 없음)
 
 ---
 
 ## Step History
+
+### Step 3 — LedgerProfile 도입: 흩어진 userType 분기 통합 — BUILT (시각 검증 대기)
+*Date: 2026-07-10*
+
+Files changed:
+- `lib/core/data/ledger_profile.dart` (신규) — 유형별 역량 선언 값 객체 + `LedgerProfile.of(userType)` 단일 진실 원천(8개 필드).
+- `lib/ui/screens/day_entry_screen.dart` — `isBusinessUser` 생성자 prop 제거하고 `_profile = LedgerProfile.of(widget.userType)`에서 파생. 사업경비/소득토글 노출/근로소득칩/원천징수 기본값을 profile 필드로 교체. 소득 칩은 `_profile.incomeTypes`로 렌더.
+- `lib/ui/screens/expense_calendar_screen.dart` — `_profile` getter 추가, `_isBusinessUser`를 `_profile.tracksBusinessExpense`로 위임. 소득유형 기본값→`_profile.defaultIncomeType`, 원천징수→`_profile.withholdingDefault`, 월급날 칩→`_profile.showsPaydayChip`으로 교체. `DayEntryScreen` 호출부의 `isBusinessUser` 인자 제거.
+
+Decisions made:
+- **home_screen.dart는 이번 스텝 범위에서 제외** — home의 `_isEmployee`/유형 분기는 홈 대시보드 카드·알림 스케줄링 로직이라 가계부 화면과 성격이 다름. 블라스트 반경을 가계부로 한정. KG-9로 후속 기록.
+- 각 치환은 논리 동치(진리표 동일) 확인: `_isBusinessUser`≡`tracksBusinessExpense`, 소득기본값·원천징수·월급날칩 전부 유형별로 기존과 동일.
+
+Verification: `flutter analyze`(ledger_profile·day_entry·calendar) — 신규 이슈 없음(calendar의 style lint 4건은 미변경 영역 1902/2279행의 기존 것). `flutter test` 53건 통과. **미완: 3유형 웹 프리뷰 스크린샷 대조(동작 변화 0 최종 확인) — 사용자 확인 후 진행.**
+Reviewer findings: 대기 중
+Deploy: NO
 
 ### Step 2 — 지급명세서 확인 알림(KG-6c) + 건강보험 미가입 정기 경고(KG-6d) — BUILT (review pending)
 *Date: 2026-07-10*
@@ -88,6 +104,7 @@ Deploy: 확인됨
 - ~~**KG-6d** — 건강보험 지역가입자 전환 안내 없음~~ — RESOLVED, Step 2 (아래)
 - **KG-7** — `tax_reserve_shortfall` 이벤트형 리마인더가 `reminder_list_screen.dart` "기본 제공" 토글 UI에 등록 안 돼 있음(예산/미기록 넛지 4종만 등록됨) — 사용자가 끄거나 시각 편집 불가. Step 2 리서치 중 발견, 이번 스텝 범위 밖.
 - **KG-8** — 이벤트형 리마인더 고정 notifId(2002/2004/2005/2006)가 커스텀 리마인더 notifId 체계(`_notifBase=2000 + reminder.id`)와 같은 대역이라, 사용자 커스텀 리마인더 id가 2·4·5·6이면 이론상 충돌 가능. Step 2 리서치 중 발견, 스킴 변경은 범위 밖.
+- **KG-9** — `home_screen.dart`의 `_isEmployee`/유형 문자열 분기가 아직 LedgerProfile로 통합 안 됨(Step 3에서 가계부 두 화면만 우선 정리, 홈은 블라스트 반경 관리 위해 보류) — 2026-07-10
 
 ---
 

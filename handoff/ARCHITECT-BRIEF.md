@@ -4,7 +4,64 @@
 
 ---
 
-## Step 2 — 지급명세서 발급 확인 알림(KG-6c) + 건강보험 미가입 정기 경고(KG-6d)
+## Step 3 — LedgerProfile 도입: 흩어진 userType 분기 통합 (동작 변화 0)
+## Step 4 — 가계부 화면 크롬 정리 (7층 → 4층)
+
+### 문제 (코드 확인 완료)
+- 가계부 3파일에 `userType == '프리랜서'` / `_isBusinessUser` 류 문자열·불린 분기가 15+ 군데 흩어져 있어, 기능 추가 시 3유형 × N군데를 매번 맞춰야 함. 하나 빠뜨리면 유형 간 어긋남 → "고칠 때마다 이상해짐"의 근본 원인.
+- `expense_calendar_screen.dart` 달력 뷰: 그리드 위 크롬 7층(월간네비 → 결제수단 스트립 → 뷰탭 → 요약바 → 적립카드 → 고정지출배너 → 범례). 프리랜서·N잡러가 제일 심함.
+
+### 확인된 분기 지점 (전부 이걸로 대체)
+- `expense_calendar_screen.dart`: `_isBusinessUser`(L73), 소득유형 기본값(L199/201/381/394/414/434), `_incomeIsWithheld=프리랜서`(L436), 월급날 `!=프리랜서`(L573), 적립카드 프리랜서·N잡러(L533/226).
+- `day_entry_screen.dart`: `isBusinessUser` prop, `userType!='직장인'` 소득토글(L222), 원천징수 토글(L226), 근로소득칩 `!isFreelancer`(L380), 원천징수 기본 ON(L444).
+- `home_screen.dart`: `_isEmployee`(L93), 적립·건강 체크 프리랜서·N잡러(L262·프리랜서 health), 카드 문턱 `_isEmployee` 게이트.
+
+### Step 3 설계 — `lib/core/data/ledger_profile.dart` (신규, 순수 데이터, 위젯/DB 의존 0)
+```dart
+class LedgerProfile {
+  final List<String> incomeTypes;   // 직장인 ['급여'] / N잡러 ['급여','사업소득','기타소득'] / 프리랜서 ['사업소득','기타소득']
+  final bool showsSalaryInput;      // 급여 포함 → 직장인·N잡러
+  final bool tracksBusinessExpense; // 프리랜서·N잡러
+  final bool showsReserveCard;      // 프리랜서·N잡러
+  final bool showsPaydayChip;       // 직장인·N잡러 (고정 월급날)
+  final bool showsCardThreshold;    // 직장인·N잡러
+  final bool selfPaysInsurance;     // 프리랜서 (건강보험 지역가입 넛지)
+  final bool withholdingDefault;    // 프리랜서
+  String get defaultIncomeType => incomeTypes.first == '급여' ? '급여' : '사업소득';
+  factory LedgerProfile.of(String userType) { ... }  // 3유형 switch, 단일 진실 원천
+}
+```
+- 유형별 값(단일 진실 원천):
+  - 직장인:   incomeTypes=['급여'], salary=T, biz=F, reserve=F, payday=T, cardThreshold=T, selfIns=F, withhold=F
+  - N잡러:    incomeTypes=['급여','사업소득','기타소득'], salary=T, biz=T, reserve=T, payday=T, cardThreshold=T, selfIns=F, withhold=F
+  - 프리랜서: incomeTypes=['사업소득','기타소득'], salary=F, biz=T, reserve=T, payday=F, cardThreshold=F, selfIns=T, withhold=T
+
+### Step 3 빌드 순서 (동작 변화 0 — 픽셀 동일이 검증 기준)
+1. `ledger_profile.dart` 생성.
+2. `day_entry_screen.dart`: `isBusinessUser` prop 제거하고 `LedgerProfile`을 프로퍼티로 받거나 `userType`에서 파생. 흩어진 분기를 `profile.tracksBusinessExpense`/`profile.incomeTypes`/`profile.withholdingDefault` 등으로 교체. 근로소득 칩은 `incomeTypes.contains('급여')`로 판단.
+3. `expense_calendar_screen.dart`: `_isBusinessUser` getter를 `_profile.tracksBusinessExpense`로, 소득유형 기본값/월급날/적립카드 게이트를 profile 필드로 교체. `DayEntryScreen` 생성 시 넘기던 `isBusinessUser`도 정리.
+4. `home_screen.dart`: `_isEmployee` 및 적립·건강·카드문턱 게이트를 profile 필드로 교체(단, home의 `_isEmployee`는 홈 카드에도 쓰이므로 가계부 관련 게이트만 정리 — 홈 고유 로직은 범위 밖, 건드리지 말 것).
+5. `flutter analyze` + `flutter test` + `flutter build web` 후 프리뷰로 3유형(직장인/N잡러/프리랜서) 각각 가계부 스크린샷이 리팩터 전과 동일한지 확인.
+
+### Step 4 빌드 순서 (Step 3 검증 통과 후에만 착수)
+6. 크롬 7층 → 4층: 결제수단 스트립+범례 통합, 적립카드 기본 접힘(요약 1줄 + 탭 시 펼침), 뷰탭 위치 정리. **여기부터는 동작/레이아웃이 바뀌므로 유형별 스크린샷 재확인 필수.**
+
+### Flags
+- Step 3는 **동작·픽셀 불변**이 절대 원칙. 리팩터 중 눈에 보이는 변화가 생기면 그건 버그 — Step 4로 미루지 말고 즉시 원복.
+- `home_screen.dart`의 홈 화면 고유 카드 로직(수입카드 세전 역산 등)은 건드리지 말 것. 가계부로 넘어가는 게이트만.
+- 검증된 인터랙션(핀치줌·드래그 다중선택·프리필)은 로직 손대지 말 것.
+- KG-7/KG-8은 여전히 범위 밖.
+
+### Definition of Done
+- [ ] `LedgerProfile.of(userType)`가 3유형 전부 정확한 값 반환
+- [ ] 가계부 3파일에서 `userType == '...'` 직접 문자열 비교가 profile 필드 참조로 교체됨(파생 factory 내부 제외)
+- [ ] Step 3 후 3유형 가계부 화면이 리팩터 전과 픽셀 동일(스크린샷 대조)
+- [ ] Step 4 후 달력 뷰 크롬이 4층 이하, 3유형 모두 깨짐 없음
+- [ ] `flutter test` 통과, `flutter analyze` 신규 이슈 없음
+
+---
+
+## Step 2 — 지급명세서 발급 확인 알림(KG-6c) + 건강보험 미가입 정기 경고(KG-6d) (COMPLETE — 커밋 `2185ce6`)
 
 ### Context (confirmed by reading the code)
 - **KG-6c**: `kSystemReminderCatalog` (`lib/core/notifications/system_reminder_catalog.dart:91+`) is the single source for all fixed-date broadcast notifications. Each `SystemReminder` has `employee`/`business` bool gates checked via `appliesTo()` (line 81-87) — `business: true, employee: false` reaches 프리랜서+N잡러 only (see `isBiz` at line 83), which matches what we want (직장인 제외). notifId 1004 is unused (used ids in this file: 1001-1003, 1005-1013, 1016-1020; 1014/1015 are used elsewhere by `idBudgetNear`/`idBudgetOver` in `reminder_scheduler.dart`, avoid those too). Groups are declared in `kGroupLabels`/`kGroupSchedules` maps (lines 13-26, 28-41) — every existing catalog entry has a `group`.

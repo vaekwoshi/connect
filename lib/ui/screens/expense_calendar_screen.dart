@@ -8,6 +8,7 @@ import '../../core/data/expense_category.dart';
 import '../../core/data/expense_item.dart';
 import '../../core/data/income_entry.dart';
 import '../../core/data/kr_holidays.dart';
+import '../../core/data/ledger_profile.dart';
 import '../../core/notifications/reminder_scheduler.dart';
 import '../../core/tax_engine/reserve_estimator.dart';
 import '../theme/app_theme.dart';
@@ -70,7 +71,8 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
   // 3.3% 원천징수 사업소득 여부 — true면 수익 입력값이 실수령액(세후).
   bool _incomeIsWithheld = false;
 
-  bool get _isBusinessUser => _userType == '프리랜서' || _userType == 'N잡러';
+  LedgerProfile get _profile => LedgerProfile.of(_userType);
+  bool get _isBusinessUser => _profile.tracksBusinessExpense;
 
   int _activeView = 0; // 0=달력, 1=목록, 2=분석, 3=연간
   List<ExpenseItem> _allExpenses = [];
@@ -196,11 +198,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     if (mounted) {
       setState(() {
         _userType = loadedType;
-        if (_userType == '직장인') {
-          _incomeType = '급여';
-        } else if (_userType == '프리랜서') {
-          _incomeType = '사업소득';
-        }
+        _incomeType = LedgerProfile.of(loadedType).defaultIncomeType;
         _paydayDay = paydayDay;
         _cardDates = cards;
         _expensesByDay = expMap;
@@ -342,7 +340,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
         builder: (_) => DayEntryScreen(
           dates: Set.of(_selected),
           userType: _userType,
-          isBusinessUser: _isBusinessUser,
           hasExisting: _selected.any((d) => _hasData(_key(d))),
           initialIncomeText: _incomeCtrl.text,
           initialIncomeType: _incomeType,
@@ -378,7 +375,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
   /// 그 날 기록된 소득의 유형(첫 항목 기준). 없으면 유형별 기본값(직장인·N잡러=근로소득, 프리랜서=사업소득).
   String _incomeTypeOf(String key) {
     final list = _incomesByDay[key];
-    if (list == null || list.isEmpty) return _userType == '프리랜서' ? '사업소득' : '급여';
+    if (list == null || list.isEmpty) return _profile.defaultIncomeType;
     return list.first.incomeType;
   }
 
@@ -391,7 +388,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     final ot = _paymentOf(key, _catOther);
     _incomeType = _incomeTypeOf(key);
     _incomeIsWithheld = (_incomesByDay[key] ?? const []).isEmpty
-        ? _userType == '프리랜서'
+        ? _profile.withholdingDefault
         : (_incomesByDay[key] ?? const []).first.isWithheld;
     // 기존 지출에서 결제수단별 카테고리·사업경비 복원
     for (final e in (_expensesByDay[key] ?? []).toSet()) {
@@ -411,7 +408,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
       final inc = _incomeOf(key);
       _incomeType = _incomeTypeOf(key);
       _incomeIsWithheld = (_incomesByDay[key] ?? const []).isEmpty
-        ? _userType == '프리랜서'
+        ? _profile.withholdingDefault
         : (_incomesByDay[key] ?? const []).first.isWithheld;
       _incomeCtrl.text = inc > 0 ? _fmt.format(inc) : '';
       final cr = _paymentOf(key, _catCredit);
@@ -431,9 +428,9 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
   }
 
   void _clearForm() {
-    _incomeType = _userType == '프리랜서' ? '사업소득' : '급여';
+    _incomeType = _profile.defaultIncomeType;
     // 프리랜서는 소득이 항상 원천징수 대상이라 기본 체크 — 통장엔 이미 뗀 돈이 들어오므로.
-    _incomeIsWithheld = _userType == '프리랜서';
+    _incomeIsWithheld = _profile.withholdingDefault;
     _creditCategory = '기타';
     _debitCategory  = '기타';
     _otherCategory  = '기타';
@@ -570,7 +567,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
       child: Row(
         children: [
           // 월급날 — 고정 급여가 있는 직장인·N잡러만. 프리랜서는 해당 없음.
-          if (_userType != '프리랜서')
+          if (_profile.showsPaydayChip)
             GestureDetector(
               onTap: _showPaydayPicker,
               behavior: HitTestBehavior.opaque,

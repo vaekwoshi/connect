@@ -4,6 +4,7 @@ import '../../core/data/db_helper.dart';
 import '../../core/data/expense_category.dart';
 import '../../core/data/expense_item.dart';
 import '../../core/data/income_entry.dart';
+import '../../core/data/ledger_profile.dart';
 import '../theme/app_theme.dart';
 
 const _incomeColor = Color(0xFF5CB87A); // 수익 — soft green
@@ -16,7 +17,6 @@ const _catOther  = '기타';
 class DayEntryScreen extends StatefulWidget {
   final Set<DateTime> dates;
   final String userType;
-  final bool isBusinessUser;
   final bool hasExisting;
   final String initialIncomeText;
   final String initialIncomeType;
@@ -37,7 +37,6 @@ class DayEntryScreen extends StatefulWidget {
     super.key,
     required this.dates,
     required this.userType,
-    required this.isBusinessUser,
     required this.hasExisting,
     required this.initialIncomeText,
     required this.initialIncomeType,
@@ -65,6 +64,8 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
   late final _debitCtrl  = TextEditingController(text: widget.initialDebitText);
   late final _otherCtrl  = TextEditingController(text: widget.initialOtherText);
 
+  late final LedgerProfile _profile = LedgerProfile.of(widget.userType);
+
   late String _incomeType = widget.initialIncomeType;
   late bool _incomeIsWithheld = widget.initialIncomeWithheld;
   late String _creditCategory = widget.initialCreditCategory;
@@ -83,7 +84,7 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
   }
 
   void _onIncomeChanged() {
-    if (widget.isBusinessUser && _incomeIsWithheld) setState(() {});
+    if (_profile.tracksBusinessExpense && _incomeIsWithheld) setState(() {});
   }
 
   @override
@@ -135,25 +136,25 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
       await dbService.insertIncomeEntry(IncomeEntry(
         id: '${prefix}_inc', date: first, endDate: endDate, amount: inc, memo: '',
         incomeType: _incomeType,
-        isWithheld: widget.isBusinessUser && _incomeType != '급여' && _incomeIsWithheld));
+        isWithheld: _profile.tracksBusinessExpense && _incomeType != '급여' && _incomeIsWithheld));
     }
     if (cr > 0) {
       await dbService.insertExpense(ExpenseItem(
         id: '${prefix}_cr', date: first, endDate: endDate, amount: cr,
         content: '', category: _creditCategory, paymentMethod: _catCredit,
-        isBusiness: widget.isBusinessUser && _creditIsBusiness));
+        isBusiness: _profile.tracksBusinessExpense && _creditIsBusiness));
     }
     if (db > 0) {
       await dbService.insertExpense(ExpenseItem(
         id: '${prefix}_db', date: first, endDate: endDate, amount: db,
         content: '', category: _debitCategory, paymentMethod: _catDebit,
-        isBusiness: widget.isBusinessUser && _debitIsBusiness));
+        isBusiness: _profile.tracksBusinessExpense && _debitIsBusiness));
     }
     if (ot > 0) {
       await dbService.insertExpense(ExpenseItem(
         id: '${prefix}_ot', date: first, endDate: endDate, amount: ot,
         content: '', category: _otherCategory, paymentMethod: _catOther,
-        isBusiness: widget.isBusinessUser && _otherIsBusiness));
+        isBusiness: _profile.tracksBusinessExpense && _otherIsBusiness));
     }
 
     if (mounted) Navigator.pop(context);
@@ -219,11 +220,11 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
               const SizedBox(height: 8),
               _BlueprintAmountField(label: '', ctrl: _incomeCtrl, color: _incomeColor, fmt: _fmt),
               const SizedBox(height: 8),
-              if (widget.userType != '직장인')
+              if (_profile.incomeTypes.length > 1)
                 _incomeTypeToggle(sub)
               else
                 _employeeOtherIncomeNotice(sub),
-              if (widget.isBusinessUser && _incomeType != '급여') _withheldToggle(ink, sub),
+              if (_profile.tracksBusinessExpense && _incomeType != '급여') _withheldToggle(ink, sub),
               const SizedBox(height: 18),
 
               // ── 지출 ───────────────────────────
@@ -242,7 +243,7 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
                       category: _creditCategory,
                       onCategoryChanged: (v) => setState(() => _creditCategory = v),
                       showBottomBorder: false,
-                      isBusiness: widget.isBusinessUser ? _creditIsBusiness : null,
+                      isBusiness: _profile.tracksBusinessExpense ? _creditIsBusiness : null,
                       onBusinessChanged: (v) => setState(() => _creditIsBusiness = v),
                     ),
                   ),
@@ -254,7 +255,7 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
                       category: _debitCategory,
                       onCategoryChanged: (v) => setState(() => _debitCategory = v),
                       showBottomBorder: false,
-                      isBusiness: widget.isBusinessUser ? _debitIsBusiness : null,
+                      isBusiness: _profile.tracksBusinessExpense ? _debitIsBusiness : null,
                       onBusinessChanged: (v) => setState(() => _debitIsBusiness = v),
                     ),
                   ),
@@ -266,7 +267,7 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
                       category: _otherCategory,
                       onCategoryChanged: (v) => setState(() => _otherCategory = v),
                       showBottomBorder: false,
-                      isBusiness: widget.isBusinessUser ? _otherIsBusiness : null,
+                      isBusiness: _profile.tracksBusinessExpense ? _otherIsBusiness : null,
                       onBusinessChanged: (v) => setState(() => _otherIsBusiness = v),
                     ),
                   ),
@@ -344,7 +345,6 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
   }
 
   Widget _incomeTypeToggle(Color sub) {
-    final isFreelancer = widget.userType == '프리랜서';
     final String hint;
     switch (_incomeType) {
       case '급여':
@@ -377,9 +377,8 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  if (!isFreelancer) _incomeTypeChip('근로소득', '급여'),
-                  _incomeTypeChip('사업소득', '사업소득'),
-                  _incomeTypeChip('기타소득', '기타소득'),
+                  for (final t in _profile.incomeTypes)
+                    _incomeTypeChip(t == '급여' ? '근로소득' : t, t),
                 ],
               ),
             ),
