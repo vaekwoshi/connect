@@ -21,7 +21,7 @@ class ReminderScheduler {
   static Future<void> scheduleAll({required int payDay, required String userType}) async {
     await NotificationHistory.backfill(userType: userType);
     await scheduleTaxSeason(userType);
-    await customReminderService.ensureRecordSeed(payDay: payDay);
+    await customReminderService.ensureRecordSeed(payDay: payDay, userType: userType);
   }
 
   static Future<void> cancelAll() => notificationHelper.cancelAll();
@@ -51,6 +51,10 @@ class ReminderScheduler {
         if (s.key == 'sys_may_prep' && (userType == '프리랜서' || userType == 'N잡러')) {
           body = await _appendReserveStatus(body, userType);
         }
+        // 프리랜서·N잡러는 "5월 신고 시작" 알림에 3.3%/8.8% 원천징수 정산 안내를 덧붙인다.
+        if (s.key == 'sys_may_start' && (userType == '프리랜서' || userType == 'N잡러')) {
+          body = _appendWithholdingNote(body);
+        }
         await notificationHelper.scheduleAtDate(
           id: s.notifId,
           title: s.title,
@@ -61,6 +65,11 @@ class ReminderScheduler {
         await notificationHelper.cancel(s.notifId);
       }
     }
+  }
+
+  /// "5월 신고 시작" 알림 본문에 3.3%/8.8% 원천징수 정산(환급/추가납부) 안내를 덧붙인다.
+  static String _appendWithholdingNote(String baseBody) {
+    return '$baseBody 사업소득(3.3%)·기타소득(8.8%)으로 미리 낸 세금은 실제 세액과 정산돼 돌려받거나(환급) 더 낼(추가납부) 수 있어요.';
   }
 
   /// "5월 신고 준비" 알림 본문에 예상 세금 대비 현재 적립 현황을 덧붙인다.

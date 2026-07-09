@@ -48,16 +48,28 @@ class CustomReminderService {
     return updated;
   }
 
+  static const String _payDayRecordTitle = '월급날이에요! 가계부에 기록해볼까요?';
+  static const String _freelancerRecordTitle = '가계부에 오늘 기록해볼까요?';
+
   /// 기록 넛지 시드 — 최초 1회만 reminders에 'record' 항목을 만든다(매월·급여일·18시).
   /// 월급날 알림과 가계부 기록 넛지를 하나로 합친 기본 제공 리마인더. 한 번 만들면 사용자가 시각만 편집 가능.
-  Future<void> ensureRecordSeed({required int payDay}) async {
+  /// 프리랜서는 고정 월급날 개념이 없어 문구를 분기한다(userType). 이미 시드된 프리랜서 유저는
+  /// 옛 "월급날" 문구가 남아있으면 시각·주기는 그대로 두고 제목만 1회 갱신한다.
+  Future<void> ensureRecordSeed({required int payDay, required String userType}) async {
     final all = await list();
-    final exists = all.any((r) => r.kind == 'record');
-    if (exists) return;
+    final title = userType == '프리랜서' ? _freelancerRecordTitle : _payDayRecordTitle;
+    final existing = all.where((r) => r.kind == 'record').toList();
+    if (existing.isNotEmpty) {
+      final current = existing.first;
+      if (userType == '프리랜서' && current.title == _payDayRecordTitle) {
+        await update(current.copyWith(title: _freelancerRecordTitle));
+      }
+      return;
+    }
     final now = DateTime.now();
     final day = payDay.clamp(1, 28);
     await add(Reminder(
-      title: '월급날이에요! 가계부에 기록해볼까요?',
+      title: title,
       kind: 'record',
       frequency: ReminderFrequency.monthly,
       notifyDate: DateTime(now.year, now.month, day),
