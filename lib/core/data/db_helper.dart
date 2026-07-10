@@ -7,6 +7,7 @@ import '../security/crypto_helper.dart';
 import 'expense_item.dart';
 import 'income_entry.dart';
 import 'recurring_template.dart';
+import 'quick_entry_preset.dart';
 
 /// 온디바이스 데이터베이스 보안 인터페이스 정의
 abstract class DatabaseService {
@@ -74,6 +75,10 @@ abstract class DatabaseService {
   Future<int> getPendingRecurringCount(int year, int month);
   Future<List<Map<String, dynamic>>> getRecurringConfirmations(int year, int month);
   Future<void> confirmRecurring(int templateId, int year, int month, {required int amount, required String expenseId});
+  // 즐겨찾기 빠른 입력 프리셋 (v33)
+  Future<int> insertQuickEntryPreset(QuickEntryPreset p);
+  Future<List<QuickEntryPreset>> getQuickEntryPresets();
+  Future<void> deleteQuickEntryPreset(int id);
   Future<void> skipRecurring(int templateId, int year, int month);
   // 카드 결제일 목록 (v26)
   Future<List<Map<String, dynamic>>> getCardPaymentDates();
@@ -162,6 +167,19 @@ class SqfliteDatabaseHelper implements DatabaseService {
     )
   ''';
 
+  /// 즐겨찾기 빠른 입력 프리셋 (v33)
+  static const String _quickEntryPresetsTableSql = '''
+    CREATE TABLE IF NOT EXISTS quick_entry_presets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      amount INTEGER NOT NULL DEFAULT 0,
+      category TEXT NOT NULL DEFAULT '기타',
+      payment_method TEXT NOT NULL DEFAULT '기타',
+      is_business INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0
+    )
+  ''';
+
   /// 고정 지출 월별 확인 기록 (v25)
   static const String _recurringConfirmationsTableSql = '''
     CREATE TABLE IF NOT EXISTS recurring_confirmations (
@@ -219,7 +237,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
 
     _db = await openDatabase(
       path,
-      version: 32,
+      version: 33,
       onCreate: (db, version) async {
         // 프로필 테이블 생성
         await db.execute('''
@@ -360,6 +378,8 @@ class SqfliteDatabaseHelper implements DatabaseService {
         await db.execute(_eventReminderPrefsTableSql);
         // 유형별 독립 프로필 값 (v30)
         await db.execute(_profileTypeValuesTableSql);
+        // 즐겨찾기 빠른 입력 프리셋 (v33)
+        await db.execute(_quickEntryPresetsTableSql);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -628,6 +648,10 @@ class SqfliteDatabaseHelper implements DatabaseService {
           try {
             await db.execute('ALTER TABLE user_profile ADD COLUMN industrial_accident_enrolled INTEGER DEFAULT 0');
           } catch (e) {}
+        }
+        // 즐겨찾기 빠른 입력 프리셋 (v33)
+        if (oldVersion < 33) {
+          await db.execute(_quickEntryPresetsTableSql);
         }
       },
     );
@@ -1428,6 +1452,45 @@ class SqfliteDatabaseHelper implements DatabaseService {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  QuickEntryPreset _rowToQuickEntryPreset(Map<String, dynamic> row) => QuickEntryPreset(
+    id: row['id'] as int,
+    name: row['name'] as String,
+    amount: row['amount'] as int? ?? 0,
+    category: row['category'] as String? ?? '기타',
+    paymentMethod: row['payment_method'] as String? ?? '기타',
+    isBusiness: (row['is_business'] as int?) == 1,
+    sortOrder: row['sort_order'] as int? ?? 0,
+  );
+
+  @override
+  Future<int> insertQuickEntryPreset(QuickEntryPreset p) async {
+    final db = _db;
+    if (db == null) return -1;
+    return await db.insert('quick_entry_presets', {
+      'name': p.name,
+      'amount': p.amount,
+      'category': p.category,
+      'payment_method': p.paymentMethod,
+      'is_business': p.isBusiness ? 1 : 0,
+      'sort_order': p.sortOrder,
+    });
+  }
+
+  @override
+  Future<List<QuickEntryPreset>> getQuickEntryPresets() async {
+    final db = _db;
+    if (db == null) return [];
+    final rows = await db.query('quick_entry_presets', orderBy: 'sort_order ASC, id ASC');
+    return rows.map(_rowToQuickEntryPreset).toList();
+  }
+
+  @override
+  Future<void> deleteQuickEntryPreset(int id) async {
+    final db = _db;
+    if (db == null) return;
+    await db.delete('quick_entry_presets', where: 'id = ?', whereArgs: [id]);
+  }
+
   @override
   Future<List<Map<String, dynamic>>> getCardPaymentDates() async {
     final db = _db;
@@ -1469,6 +1532,7 @@ class SqfliteDatabaseHelper implements DatabaseService {
       await db.execute("DELETE FROM notification_log");
       await db.execute("DELETE FROM recurring_templates");
       await db.execute("DELETE FROM recurring_confirmations");
+      await db.execute("DELETE FROM quick_entry_presets");
       await db.execute("DELETE FROM card_payment_dates");
       await db.execute("DELETE FROM app_state");
       await db.execute("DELETE FROM event_reminder_prefs");
@@ -1943,6 +2007,36 @@ class InMemoryDatabaseHelper implements DatabaseService {
     _recurringConfirmations['${templateId}_${year}_$month'] = 2;
   }
 
+  // 즐겨찾기 빠른 입력 프리셋 (v33) — 인메모리 스텁
+  final List<QuickEntryPreset> _quickEntryPresets = [];
+  int _quickEntryPresetAutoId = 1;
+
+  @override
+  Future<int> insertQuickEntryPreset(QuickEntryPreset p) async {
+    if (_isClosed) return -1;
+    final id = _quickEntryPresetAutoId++;
+    _quickEntryPresets.add(QuickEntryPreset(
+      id: id,
+      name: p.name,
+      amount: p.amount,
+      category: p.category,
+      paymentMethod: p.paymentMethod,
+      isBusiness: p.isBusiness,
+      sortOrder: p.sortOrder,
+    ));
+    return id;
+  }
+
+  @override
+  Future<List<QuickEntryPreset>> getQuickEntryPresets() async =>
+      List<QuickEntryPreset>.from(_quickEntryPresets);
+
+  @override
+  Future<void> deleteQuickEntryPreset(int id) async {
+    if (_isClosed) return;
+    _quickEntryPresets.removeWhere((e) => e.id == id);
+  }
+
   // 카드 결제일 (v26) — 인메모리 스텁
   final List<Map<String, dynamic>> _cardPaymentDates = [];
   int _cardDateAutoId = 1;
@@ -1995,6 +2089,7 @@ class InMemoryDatabaseHelper implements DatabaseService {
     _reminderSettings.clear();
     _recurringTemplates.clear();
     _recurringConfirmations.clear();
+    _quickEntryPresets.clear();
     _appState.clear();
     _eventReminderPrefs.clear();
     await close();

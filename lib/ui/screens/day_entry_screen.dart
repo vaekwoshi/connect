@@ -5,6 +5,7 @@ import '../../core/data/expense_category.dart';
 import '../../core/data/expense_item.dart';
 import '../../core/data/income_entry.dart';
 import '../../core/data/ledger_profile.dart';
+import '../../core/data/quick_entry_preset.dart';
 import '../theme/app_theme.dart';
 
 const _incomeColor = Color(0xFF5CB87A); // 수익 — soft green
@@ -77,10 +78,220 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
 
   final _fmt = NumberFormat('#,###');
 
+  List<QuickEntryPreset> _presets = [];
+
   @override
   void initState() {
     super.initState();
     _incomeCtrl.addListener(_onIncomeChanged);
+    _loadPresets();
+  }
+
+  Future<void> _loadPresets() async {
+    final list = await dbService.getQuickEntryPresets();
+    if (mounted) setState(() => _presets = list);
+  }
+
+  /// 즐겨찾기 프리셋을 결제수단에 맞는 행에 채운다.
+  void _applyPreset(QuickEntryPreset p) {
+    setState(() {
+      final amountText = _fmt.format(p.amount);
+      switch (p.paymentMethod) {
+        case _catCredit:
+          _creditCtrl.text = amountText;
+          _creditCategory = p.category;
+          if (_profile.tracksBusinessExpense) _creditIsBusiness = p.isBusiness;
+          break;
+        case _catDebit:
+          _debitCtrl.text = amountText;
+          _debitCategory = p.category;
+          if (_profile.tracksBusinessExpense) _debitIsBusiness = p.isBusiness;
+          break;
+        default:
+          _otherCtrl.text = amountText;
+          _otherCategory = p.category;
+          if (_profile.tracksBusinessExpense) _otherIsBusiness = p.isBusiness;
+      }
+    });
+  }
+
+  Future<void> _showAddPresetDialog() async {
+    final nameCtrl = TextEditingController();
+    final amountCtrl = TextEditingController();
+    String paymentMethod = _catCredit;
+    String category = '기타';
+    final ink = AppTheme.ink(context);
+    final sub = AppTheme.inkSecondary(context);
+    final bg = AppTheme.backgroundColor(context);
+    final line = AppTheme.line(context);
+    final accent = AppTheme.accentColor(context);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: line),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          title: Text('즐겨찾기 추가', style: AppTheme.serif(17, ink)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  style: AppTheme.sans(15, ink),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '이름 (예: 아메리카노)',
+                    hintStyle: AppTheme.sans(15, AppTheme.inkTertiary(ctx)),
+                    border: UnderlineInputBorder(borderSide: BorderSide(color: line)),
+                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: line)),
+                    focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: accent, width: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  style: AppTheme.sans(15, ink),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '금액',
+                    hintStyle: AppTheme.sans(15, AppTheme.inkTertiary(ctx)),
+                    suffixText: '원',
+                    border: UnderlineInputBorder(borderSide: BorderSide(color: line)),
+                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: line)),
+                    focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: accent, width: 1.5)),
+                  ),
+                  onChanged: (v) {
+                    final n = v.replaceAll(RegExp(r'[^0-9]'), '');
+                    final f = n.isEmpty ? '' : _fmt.format(int.parse(n));
+                    amountCtrl.value = TextEditingValue(text: f, selection: TextSelection.collapsed(offset: f.length));
+                  },
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [_catCredit, _catDebit, _catOther].map((pm) {
+                    final sel = paymentMethod == pm;
+                    return GestureDetector(
+                      onTap: () => setDialogState(() => paymentMethod = pm),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: sel ? accent.withValues(alpha: 0.15) : Colors.transparent,
+                          border: Border.all(color: sel ? accent : line, width: sel ? 1.4 : 1.0),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(pm,
+                            style: AppTheme.sans(12, sel ? ink : sub,
+                                weight: sel ? FontWeight.w700 : FontWeight.w500)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: kExpenseCategories.map((cat) {
+                    final sel = category == cat.id;
+                    return GestureDetector(
+                      onTap: () => setDialogState(() => category = cat.id),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: sel ? cat.color.withValues(alpha: 0.15) : Colors.transparent,
+                          border: Border.all(color: sel ? cat.color : line, width: sel ? 1.4 : 1.0),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(cat.icon, size: 13, color: sel ? cat.color : sub),
+                          const SizedBox(width: 4),
+                          Text(cat.label,
+                              style: AppTheme.sans(12, sel ? ink : sub,
+                                  weight: sel ? FontWeight.w700 : FontWeight.w500)),
+                        ]),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx, false),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 0, 8, 12),
+                child: Text('취소', style: AppTheme.sans(14, sub)),
+              ),
+            ),
+            GestureDetector(
+              onTap: () {
+                if (nameCtrl.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                child: Text('저장', style: AppTheme.sans(14, accent, weight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true) {
+      final amount = int.tryParse(amountCtrl.text.replaceAll(',', '')) ?? 0;
+      await dbService.insertQuickEntryPreset(QuickEntryPreset(
+        id: 0,
+        name: nameCtrl.text.trim(),
+        amount: amount,
+        category: category,
+        paymentMethod: paymentMethod,
+        sortOrder: _presets.length,
+      ));
+      await _loadPresets();
+    }
+    nameCtrl.dispose();
+    amountCtrl.dispose();
+  }
+
+  Future<void> _confirmDeletePreset(QuickEntryPreset p) async {
+    final ink = AppTheme.ink(context);
+    final sub = AppTheme.inkSecondary(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: Text('즐겨찾기 삭제', style: AppTheme.sans(16, ink, weight: FontWeight.w700)),
+        content: Text('"${p.name}"을(를) 삭제할까요?', style: AppTheme.sans(14, sub)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('취소', style: AppTheme.sans(14, sub)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('삭제', style: AppTheme.sans(14, AppTheme.colorDanger, weight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await dbService.deleteQuickEntryPreset(p.id);
+      await _loadPresets();
+    }
   }
 
   void _onIncomeChanged() {
@@ -173,6 +384,51 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
     if (mounted) Navigator.pop(context);
   }
 
+  // ── 즐겨찾기 프리셋 ────────────────────────────────────────────────
+
+  Widget _buildPresetRow(Color ink, Color sub, Color accent, Color line) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final p in _presets)
+          GestureDetector(
+            onTap: () => _applyPreset(p),
+            onLongPress: () => _confirmDeletePreset(p),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                border: Border.all(color: line, width: 1.0),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(expenseCategoryById(p.category).icon, size: 13, color: sub),
+                const SizedBox(width: 4),
+                Text(p.name, style: AppTheme.sans(12, ink, weight: FontWeight.w600)),
+                const SizedBox(width: 4),
+                Text('${_fmt.format(p.amount)}원', style: AppTheme.sans(11, sub)),
+              ]),
+            ),
+          ),
+        GestureDetector(
+          onTap: _showAddPresetDialog,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              border: Border.all(color: accent, width: 1.0),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.add_rounded, size: 13, color: accent),
+              const SizedBox(width: 4),
+              Text('즐겨찾기', style: AppTheme.sans(12, accent, weight: FontWeight.w600)),
+            ]),
+          ),
+        ),
+      ],
+    );
+  }
+
   // ── build ─────────────────────────────────────────────────────────
 
   @override
@@ -230,6 +486,8 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
               // ── 지출 ───────────────────────────
               sectionEyebrow(Icons.arrow_downward_rounded, '지출', accent),
               const SizedBox(height: 8),
+              _buildPresetRow(ink, sub, accent, line),
+              const SizedBox(height: 10),
               Container(
                 decoration: BoxDecoration(
                   border: Border.all(color: line, width: 1),
