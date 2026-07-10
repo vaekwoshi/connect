@@ -46,6 +46,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // 신용카드/체크+현금 당월 누계 (표시용)
   double _creditCardTotal = 0.0;
   double _debitCashTotal = 0.0;
+  // 신용카드 연간(1월~오늘) 누계 — 공제 문턱(연봉의 25%)은 연 누적 기준이라 당월 합계와 분리.
+  double _creditCardYtdTotal = 0.0;
 
   // 신용카드/체크+현금 입력용 (더하기 버튼 전 임시값)
   final TextEditingController _creditCardInputController = TextEditingController();
@@ -350,8 +352,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final lastOfMonth = nextMonth.subtract(const Duration(days: 1));
 
     final all = await dbService.getExpenses();
+    final firstOfYear = DateTime(now.year, 1, 1);
     double credit = 0.0;
     double debit = 0.0;
+    double creditYtd = 0.0;
     DateTime? lastExpenseDate;
     for (final e in all) {
       final eStart = DateTime(e.date.year, e.date.month, e.date.day);
@@ -369,11 +373,16 @@ class _HomeScreenState extends State<HomeScreen> {
           debit += e.amount;
         }
       }
+      // 신카 공제 문턱은 연 누적 기준 — 올해 1월~오늘까지 신용카드 사용액만 합산.
+      if (e.paymentMethod == '신용카드' && !eStart.isBefore(firstOfYear) && !eStart.isAfter(now)) {
+        creditYtd += e.amount;
+      }
     }
     if (mounted) {
       setState(() {
         _creditCardTotal = credit;
         _debitCashTotal = debit;
+        _creditCardYtdTotal = creditYtd;
       });
       _checkCardThreshold();
       _checkBudget();
@@ -419,7 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final annualSalary = _grossIncome > 0 ? _grossIncome : monthlyIncome * 12;
     if (annualSalary <= 0) return;
     final threshold = annualSalary * 0.25;
-    if (_creditCardTotal >= threshold) {
+    if (_creditCardYtdTotal >= threshold) {
       if (!_thresholdNotified) {
         _thresholdNotified = true;
         ReminderScheduler.showThresholdReached();
@@ -427,7 +436,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _thresholdNotified = false; // 문턱 아래로 내려가면 리셋
       // 80% 임박 — 문턱 넘기 전에 한 번만.
-      if (_creditCardTotal >= threshold * 0.8) {
+      if (_creditCardYtdTotal >= threshold * 0.8) {
         if (!_thresholdNearNotified) {
           _thresholdNearNotified = true;
           ReminderScheduler.showThresholdNear();
@@ -506,6 +515,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _debitCashInputController.clear();
                   _creditCardTotal = 0.0;
                   _debitCashTotal = 0.0;
+                  _creditCardYtdTotal = 0.0;
                   _monthlyRentController.clear();
                   _freelancerIncomeController.clear();
                   _monthsController.text = '12';
@@ -734,10 +744,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final deductionThreshold = annualSalary * 0.25;
     // 신용카드 등 사용금액 소득공제는 근로소득자 전용 — 프리랜서(사업소득만 있는 경우)는 대상 아님.
     final hasThreshold = _isEmployee && annualSalary > 0;
-    final thresholdProgress = hasThreshold ? (_creditCardTotal / deductionThreshold).clamp(0.0, 1.0) : 0.0;
-    final overThreshold = hasThreshold && _creditCardTotal >= deductionThreshold;
-    final monthlyCardPace = deductionThreshold / 12;
-    final onPace = _creditCardTotal >= monthlyCardPace;
+    final thresholdProgress = hasThreshold ? (_creditCardYtdTotal / deductionThreshold).clamp(0.0, 1.0) : 0.0;
+    final overThreshold = hasThreshold && _creditCardYtdTotal >= deductionThreshold;
+    final monthlyCardPace = deductionThreshold / 12 * now.month;
+    final onPace = _creditCardYtdTotal >= monthlyCardPace;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -921,7 +931,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 14),
           _progressBlock(
             '신용카드 공제 문턱 (연봉의 25%)',
-            overThreshold ? '돌파' : '${_toWon(deductionThreshold - _creditCardTotal)} 남음',
+            overThreshold ? '돌파' : '${_toWon(deductionThreshold - _creditCardYtdTotal)} 남음',
             thresholdProgress,
             overThreshold ? AppTheme.colorSuccess : accent,
             overThreshold
@@ -1455,7 +1465,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (_grossIncome > 0) {
       // ── 상태 D: 완료 + 소득 설정됨 — 개인화 카드 ──
       if (_userType == '직장인') {
-        final remaining = _grossIncome * 0.25 - _creditCardTotal;
+        final remaining = _grossIncome * 0.25 - _creditCardYtdTotal;
         cards.add(remaining > 0
             ? _BannerCard(
                 label: '신카 공제',
@@ -1480,7 +1490,7 @@ class _HomeScreenState extends State<HomeScreen> {
           glyph: '율',
           onTap: () => _go(TaxSimulatorScreen(userType: _userType)),
         ));
-        final remaining = _grossIncome * 0.25 - _creditCardTotal;
+        final remaining = _grossIncome * 0.25 - _creditCardYtdTotal;
         cards.add(remaining > 0
             ? _BannerCard(
                 label: '신카 공제',

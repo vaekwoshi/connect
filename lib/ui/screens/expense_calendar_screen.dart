@@ -77,6 +77,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
   List<ExpenseItem> _allExpenses = [];
   int _recurringPendingCount = 0;
   int _expenseTarget = 0;
+  int _grossIncome = 0; // 예상 연봉 — 신카 공제 문턱(연봉의 25%) 계산용
   Map<int, int> _annualIncome = {}; // month(1~12) → 수입 합계
   ReserveEstimate? _reserveEstimate; // 프리랜서·N잡러 + 이번 달일 때만 채워짐
   bool _reserveCardExpanded = false; // 기본 접힘 — 캘린더 위 크롬 최소화
@@ -141,7 +142,11 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
   Future<void> _load() async {
     final profile = await dbService.getProfile();
     final loadedType = (profile?['user_type'] as String?) ?? '직장인';
-    final target = ((profile?['expense_target'] as num?) ?? 0).toInt();
+    // gross_income/expense_target은 유형별로 profile_type_values에 저장된다 —
+    // user_profile의 같은 이름 컬럼(전체 프로필 저장 위저드 전용)은 여기선 안 쓴다.
+    final typeValues = await dbService.getProfileTypeValues(loadedType);
+    final target = typeValues['expense_target']!.toInt();
+    final grossIncome = typeValues['gross_income']!.toInt();
     final allExpenses = await dbService.getExpenses();
     final allIncome   = await dbService.getIncomeEntriesForMonth(_year, _month);
     final pendingCount = await dbService.getPendingRecurringCount(_year, _month);
@@ -199,6 +204,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
         _allExpenses   = allExpenses;
         _recurringPendingCount = pendingCount;
         _expenseTarget = target;
+        _grossIncome   = grossIncome;
         _annualIncome  = annualInc;
       });
     }
@@ -1548,6 +1554,19 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     final hasData = totalExp > 0;
     final totalBusinessExp = allExps.where((e) => e.isBusiness).fold(0, (s, e) => s + e.amount);
 
+    // 신용카드 공제 문턱 — 연 누적(1월~오늘) 신용카드 사용액 기준. 조회 중인 월과 무관하게
+    // 항상 실제 올해 기준으로 계산해 홈 화면과 같은 수치를 보여준다.
+    final now = DateTime.now();
+    final firstOfYear = DateTime(now.year, 1, 1);
+    final creditYtd = _allExpenses
+        .where((e) =>
+            e.paymentMethod == _catCredit &&
+            !e.date.isBefore(firstOfYear) &&
+            !e.date.isAfter(now))
+        .fold(0, (s, e) => s + e.amount);
+    final hasThreshold = _profile.showsCardThreshold && _grossIncome > 0;
+    final cardThreshold = _grossIncome * 0.25;
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
       children: [
@@ -1659,6 +1678,25 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
               color: accent,
               ink: ink, sub: sub,
             ),
+          const SizedBox(height: 20),
+          AppTheme.hairline(context),
+        ],
+
+        // ── 신용카드 공제 문턱 (연봉 있는 직장인·N잡러) ──
+        if (hasThreshold) ...[
+          const SizedBox(height: 20),
+          Text('신용카드 공제 문턱'.toUpperCase(), style: AppTheme.label(context)),
+          const SizedBox(height: 10),
+          _analysisSimpleBar(
+            label: '연봉의 25% (${_fmt.format(cardThreshold.toInt())}원)',
+            amount: creditYtd,
+            max: cardThreshold.toInt(),
+            color: creditYtd >= cardThreshold ? AppTheme.colorSuccess : accent,
+            trailText: creditYtd >= cardThreshold
+                ? '돌파 — 체크·현금이 공제율 2배예요'
+                : '${_fmt.format(cardThreshold.toInt() - creditYtd)}원 남음',
+            ink: ink, sub: sub,
+          ),
           const SizedBox(height: 20),
           AppTheme.hairline(context),
         ],
