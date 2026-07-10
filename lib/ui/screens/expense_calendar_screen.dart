@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/physics.dart';
@@ -8,13 +9,14 @@ import '../../core/data/expense_item.dart';
 import '../../core/data/income_entry.dart';
 import '../../core/data/kr_holidays.dart';
 import '../../core/data/ledger_profile.dart';
+import '../../core/notifications/reminder_scheduler.dart';
 import '../../core/tax_engine/reserve_estimator.dart';
 import '../theme/app_theme.dart';
 import 'my_info_screen.dart';
 import 'recurring_confirm_screen.dart';
+import 'recurring_templates_screen.dart';
 import 'day_entry_screen.dart';
 import 'month_list_screen.dart';
-import 'payment_management_screen.dart';
 
 
 // ── 항목 색상 (파스텔 톤) ──
@@ -81,6 +83,10 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
   Map<int, int> _annualIncome = {}; // month(1~12) → 수입 합계
   ReserveEstimate? _reserveEstimate; // 프리랜서·N잡러 + 이번 달일 때만 채워짐
   bool _reserveCardExpanded = false; // 기본 접힘 — 캘린더 위 크롬 최소화
+
+  // 결제/고정지출 관리 — 달력 아래 인라인 노출(월급날·카드결제일·고정지출)
+  int _paydayDay = 25;
+  List<Map<String, dynamic>> _cardDates = [];
 
   // 핀치 줌 — 1단계(기본 7열) · 2단계(가로 2배 폭, 세로 동일).
   int _zoomLevel = 1;
@@ -150,6 +156,8 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     final allExpenses = await dbService.getExpenses();
     final allIncome   = await dbService.getIncomeEntriesForMonth(_year, _month);
     final pendingCount = await dbService.getPendingRecurringCount(_year, _month);
+    final paydayDay = (profile?['pay_day'] as int? ?? 25).clamp(1, 31);
+    final cardDates = await dbService.getCardPaymentDates();
 
     // 연간 수입: 12개월 병렬 로드
     final incFutures = List.generate(
@@ -206,6 +214,8 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
         _expenseTarget = target;
         _grossIncome   = grossIncome;
         _annualIncome  = annualInc;
+        _paydayDay     = paydayDay;
+        _cardDates     = cardDates;
       });
     }
     await _loadReserveEstimate();
@@ -503,24 +513,6 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
             TextButton(
               onPressed: _deselect,
               child: Text('취소', style: AppTheme.sans(14, AppTheme.accentColor(context))),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () async {
-                  await Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => PaymentManagementScreen(showPayday: _profile.showsPaydayChip),
-                  ));
-                  _load();
-                },
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.tune_rounded, size: 15, color: AppTheme.accentColor(context)),
-                  const SizedBox(width: 4),
-                  Text('관리', style: AppTheme.sans(13, AppTheme.accentColor(context), weight: FontWeight.w700)),
-                ]),
-              ),
             ),
         ],
       ),
@@ -549,11 +541,319 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
                 ],
               ),
             ),
+            if (_activeView == 0) _buildQuickSettingsRow(ink, sub),
           ],
         ),
       ),
       bottomNavigationBar: _buildBottomBar(ink, sub),
     );
+  }
+
+  /// 결제/고정지출 관리 — 달력 아래 인라인 노출(월급날·카드결제일·고정지출).
+  /// 이전엔 별도 "관리" 화면으로 들어가야 봤지만, 자주 안 쓰이는 만큼 오히려
+  /// 달력 화면에서 바로 보이고 바로 입력되게 꺼냈다.
+  Widget _buildQuickSettingsRow(Color ink, Color sub) {
+    final accent = AppTheme.accentColor(context);
+    final line = AppTheme.line(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: line, width: 1))),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (_profile.showsPaydayChip)
+            _quickChip(
+              icon: Icons.payments_outlined,
+              label: '월급 $_paydayDay일',
+              ink: ink, sub: sub, line: line,
+              onTap: _showPaydayPicker,
+            ),
+          for (final card in _cardDates)
+            _quickChip(
+              icon: Icons.credit_card_rounded,
+              label: '${card['name']} ${card['day']}일',
+              ink: ink, sub: sub, line: line,
+              onTap: () => _showCardOptions(card),
+            ),
+          _quickChip(
+            icon: Icons.add_rounded,
+            label: '카드결제일',
+            ink: accent, sub: accent, line: accent,
+            onTap: _showAddCardDialog,
+          ),
+          _quickChip(
+            icon: Icons.add_rounded,
+            label: '고정지출',
+            ink: accent, sub: accent, line: accent,
+            onTap: () async {
+              await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const RecurringTemplatesScreen(),
+              ));
+              _load();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickChip({
+    required IconData icon,
+    required String label,
+    required Color ink,
+    required Color sub,
+    required Color line,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          border: Border.all(color: line, width: 1.0),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 13, color: sub),
+          const SizedBox(width: 4),
+          Text(label, style: AppTheme.sans(12, ink, weight: FontWeight.w600)),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _showPaydayPicker() async {
+    final ink    = AppTheme.ink(context);
+    final accent = AppTheme.accentColor(context);
+    final bg     = AppTheme.backgroundColor(context);
+    final line   = AppTheme.line(context);
+    final sub    = AppTheme.inkSecondary(context);
+
+    final confirmed = await showDialog<int>(
+      context: context,
+      builder: (ctx) {
+        int current = _paydayDay;
+        return StatefulBuilder(builder: (ctx, setSt) {
+          return AlertDialog(
+            backgroundColor: bg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+              side: BorderSide(color: line),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            title: Text('월급날 설정', style: AppTheme.serif(17, ink)),
+            content: SizedBox(
+              height: 120,
+              child: ListWheelScrollView.useDelegate(
+                itemExtent: 36,
+                onSelectedItemChanged: (i) => setSt(() => current = i + 1),
+                controller: FixedExtentScrollController(initialItem: _paydayDay - 1),
+                childDelegate: ListWheelChildBuilderDelegate(
+                  childCount: 31,
+                  builder: (_, i) => Center(
+                    child: Text('${i + 1}일',
+                        style: AppTheme.sans(
+                            16,
+                            i + 1 == current ? ink : AppTheme.inkTertiary(ctx),
+                            weight: i + 1 == current
+                                ? FontWeight.w700
+                                : FontWeight.w400)),
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 8, 12),
+                  child: Text('취소', style: AppTheme.sans(14, sub)),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx, current),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                  child: Text('저장',
+                      style: AppTheme.sans(14, accent, weight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          );
+        });
+      },
+    );
+
+    if (confirmed == null || !mounted) return;
+    final profile = await dbService.getProfile() ?? {};
+    await dbService.saveProfile({...profile, 'pay_day': confirmed});
+    if (mounted) setState(() => _paydayDay = confirmed);
+  }
+
+  Future<void> _showAddCardDialog() async {
+    final nameCtrl = TextEditingController();
+    int selectedDay = 1;
+    final ink    = AppTheme.ink(context);
+    final accent = AppTheme.accentColor(context);
+    final bg     = AppTheme.backgroundColor(context);
+    final line   = AppTheme.line(context);
+    final sub    = AppTheme.inkSecondary(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        int currentDay = selectedDay;
+        return StatefulBuilder(builder: (ctx, setSt) {
+          return AlertDialog(
+            backgroundColor: bg,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(4),
+              side: BorderSide(color: line),
+            ),
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+            contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            title: Text('카드 결제일 추가', style: AppTheme.serif(17, ink)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('카드 이름',
+                    style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  style: AppTheme.sans(15, ink),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '예: 신한카드',
+                    hintStyle: AppTheme.sans(15, AppTheme.inkTertiary(ctx)),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    border: UnderlineInputBorder(
+                        borderSide: BorderSide(color: line)),
+                    enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: line)),
+                    focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: accent, width: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('결제일',
+                    style: AppTheme.sans(12, sub, weight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 100,
+                  child: ListWheelScrollView.useDelegate(
+                    itemExtent: 32,
+                    onSelectedItemChanged: (i) =>
+                        setSt(() => currentDay = i + 1),
+                    controller:
+                        FixedExtentScrollController(initialItem: currentDay - 1),
+                    childDelegate: ListWheelChildBuilderDelegate(
+                      childCount: 31,
+                      builder: (_, i) => Center(
+                        child: Text('${i + 1}일',
+                            style: AppTheme.sans(
+                                14,
+                                i + 1 == currentDay
+                                    ? ink
+                                    : AppTheme.inkTertiary(ctx),
+                                weight: i + 1 == currentDay
+                                    ? FontWeight.w700
+                                    : FontWeight.w400)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 8, 12),
+                  child: Text('취소', style: AppTheme.sans(14, sub)),
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  if (nameCtrl.text.trim().isEmpty) return;
+                  selectedDay = currentDay;
+                  Navigator.pop(ctx, true);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                  child: Text('추가',
+                      style:
+                          AppTheme.sans(14, accent, weight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          );
+        });
+      },
+    );
+
+    final name = nameCtrl.text.trim();
+    nameCtrl.dispose();
+    if (confirmed != true || name.isEmpty || !mounted) return;
+
+    await dbService.addCardPaymentDate(name, selectedDay);
+    final updated = await dbService.getCardPaymentDates();
+    if (!kIsWeb) await ReminderScheduler.scheduleCardPayments(updated);
+    if (mounted) setState(() => _cardDates = updated);
+  }
+
+  Future<void> _showCardOptions(Map<String, dynamic> card) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final ink  = AppTheme.ink(ctx);
+        final bg   = AppTheme.backgroundColor(ctx);
+        final line = AppTheme.line(ctx);
+        final sub  = AppTheme.inkSecondary(ctx);
+        return AlertDialog(
+          backgroundColor: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: BorderSide(color: line),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          title: Text('${card['name']} ${card['day']}일',
+              style: AppTheme.serif(17, ink)),
+          content: GestureDetector(
+            onTap: () => Navigator.pop(ctx, true),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('삭제',
+                  style: AppTheme.sans(15, AppTheme.colorDanger,
+                      weight: FontWeight.w600)),
+            ),
+          ),
+          actions: [
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
+                child: Text('취소', style: AppTheme.sans(14, sub)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+    await dbService.deleteCardPaymentDate(card['id'] as int);
+    final updated = await dbService.getCardPaymentDates();
+    if (!kIsWeb) await ReminderScheduler.scheduleCardPayments(updated);
+    if (mounted) setState(() => _cardDates = updated);
   }
 
   /// 고정 지출 미확인 배너

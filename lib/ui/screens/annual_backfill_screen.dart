@@ -18,6 +18,7 @@ class _MonthRow {
   final int month;
   final bool hasData; // 이미 실제 기록이 있어 입력 대상에서 제외
   final TextEditingController labor = TextEditingController();
+  final TextEditingController business = TextEditingController();
   final TextEditingController other = TextEditingController();
   final TextEditingController credit = TextEditingController();
   final TextEditingController debit = TextEditingController();
@@ -55,6 +56,7 @@ class _AnnualBackfillScreenState extends State<AnnualBackfillScreen> {
       if (row.hasData) continue;
       final date = DateTime(now.year, row.month, 1);
       final labor = _num(row.labor);
+      final business = _num(row.business);
       final other = _num(row.other);
       final credit = _num(row.credit);
       final debit = _num(row.debit);
@@ -64,10 +66,15 @@ class _AnnualBackfillScreenState extends State<AnnualBackfillScreen> {
             id: 'backfill_${now.year}_${row.month}_labor',
             date: date, amount: labor, memo: '소급 입력', incomeType: '급여'));
       }
+      if (business > 0) {
+        await dbService.insertIncomeEntry(IncomeEntry(
+            id: 'backfill_${now.year}_${row.month}_business',
+            date: date, amount: business, memo: '소급 입력', incomeType: '사업소득'));
+      }
       if (other > 0) {
         await dbService.insertIncomeEntry(IncomeEntry(
             id: 'backfill_${now.year}_${row.month}_other',
-            date: date, amount: other, memo: '소급 입력', incomeType: '기타'));
+            date: date, amount: other, memo: '소급 입력', incomeType: '기타소득'));
       }
       if (credit > 0) {
         await dbService.insertExpense(ExpenseItem(
@@ -162,7 +169,11 @@ class _AnnualBackfillScreenState extends State<AnnualBackfillScreen> {
                           children: [
                             Text('${row.month}월', style: AppTheme.sans(14, ink, weight: FontWeight.w700)),
                             const SizedBox(height: 6),
-                            Row(children: [_field('급여수입', row.labor), _field('기타수익', row.other)]),
+                            Row(children: [
+                              _field('급여수입', row.labor),
+                              _field('사업소득', row.business),
+                              _field('기타소득', row.other),
+                            ]),
                             const SizedBox(height: 6),
                             Row(children: [
                               _field('카드지출', row.credit),

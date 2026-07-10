@@ -937,31 +937,28 @@ class _PaymentCategoryRowState extends State<_PaymentCategoryRow> {
     final lineColor = focused ? cat.color : AppTheme.line(context);
     final labelColor = focused ? cat.color : sub;
 
-    final innerRow = Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+    final amountBox = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: lineColor, width: focused ? 1.4 : 1.0),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
         children: [
-          // 레이블
-          SizedBox(
-            width: 58,
-            child: Text(widget.label,
-                style: AppTheme.sans(13, labelColor, weight: FontWeight.w600)),
-          ),
-          // 금액 필드 — flex 3
           Expanded(
-            flex: 3,
             child: TextField(
               controller: widget.ctrl,
               focusNode: _focus,
               keyboardType: TextInputType.number,
               textAlign: TextAlign.right,
               cursorColor: cat.color,
-              style: AppTheme.sans(18, ink, weight: FontWeight.w700),
+              style: AppTheme.sans(16, ink, weight: FontWeight.w700),
               decoration: InputDecoration(
                 isDense: true,
                 contentPadding: EdgeInsets.zero,
                 border: InputBorder.none,
                 hintText: '0',
-                hintStyle: AppTheme.sans(18, AppTheme.inkTertiary(context), weight: FontWeight.w300),
+                hintStyle: AppTheme.sans(16, AppTheme.inkTertiary(context), weight: FontWeight.w300),
               ),
               onChanged: (v) {
                 final n = v.replaceAll(RegExp(r'[^0-9]'), '');
@@ -974,39 +971,49 @@ class _PaymentCategoryRowState extends State<_PaymentCategoryRow> {
               },
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 5),
-            child: Text('원', style: AppTheme.sans(12, sub)),
-          ),
-          // 카테고리 버튼 — flex 2
-          Expanded(
-            flex: 2,
-            child: GestureDetector(
-              onTap: _pickCategory,
-              behavior: HitTestBehavior.opaque,
-              child: Opacity(
-                opacity: isEmpty ? 0.35 : 1.0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: isEmpty ? Colors.transparent : cat.color.withValues(alpha: 0.12),
-                    border: Border.all(
-                      color: isEmpty ? AppTheme.line(context) : cat.color.withValues(alpha: 0.5),
-                    ),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(cat.icon, size: 13, color: isEmpty ? sub : cat.color),
-                    const SizedBox(width: 4),
-                    Text(cat.label,
-                        style: AppTheme.sans(12, isEmpty ? sub : cat.color,
-                            weight: FontWeight.w600)),
-                  ]),
-                ),
-              ),
+          const SizedBox(width: 4),
+          Text('원', style: AppTheme.sans(12, sub)),
+        ],
+      ),
+    );
+
+    final categoryBox = GestureDetector(
+      onTap: _pickCategory,
+      behavior: HitTestBehavior.opaque,
+      child: Opacity(
+        opacity: isEmpty ? 0.35 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isEmpty ? Colors.transparent : cat.color.withValues(alpha: 0.12),
+            border: Border.all(
+              color: isEmpty ? AppTheme.line(context) : cat.color.withValues(alpha: 0.5),
             ),
+            borderRadius: BorderRadius.circular(4),
           ),
+          child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(cat.icon, size: 13, color: isEmpty ? sub : cat.color),
+            const SizedBox(width: 4),
+            Text(cat.label,
+                style: AppTheme.sans(12, isEmpty ? sub : cat.color,
+                    weight: FontWeight.w600)),
+          ]),
+        ),
+      ),
+    );
+
+    final innerRow = Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 58,
+            child: Text(widget.label,
+                style: AppTheme.sans(13, labelColor, weight: FontWeight.w600)),
+          ),
+          Expanded(flex: 3, child: amountBox),
+          const SizedBox(width: 8),
+          Expanded(flex: 2, child: categoryBox),
         ],
     );
 
