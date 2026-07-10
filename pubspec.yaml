@@ -40,20 +40,20 @@ flutter:
     - assets/products.json
     - assets/forms/
 
-# 앱 아이콘 — 갈색 도장(낙관) '세끌', 따뜻한 종이 바탕 #F4EFE6.
-# 생성: dart run flutter_launcher_icons
+# 앱 아이콘 — 블루프린트 정체성: '세' + 도면 치수선. 콘크리트 바탕 #F8F7F5.
+# 생성: dart run flutter_launcher_icons (design/make_icon_v2.py로 재생성 가능)
 flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icon/icon.png"
-  adaptive_icon_background: "#F4EFE6"
+  adaptive_icon_background: "#F8F7F5"
   adaptive_icon_foreground: "assets/icon/icon_fg.png"
   remove_alpha_ios: true
 
 # 스플래시 — 동일 톤. 생성: dart run flutter_native_splash:create
 flutter_native_splash:
-  color: "#F4EFE6"
+  color: "#F8F7F5"
   image: "assets/icon/icon_fg.png"
   android_12:
-    color: "#F4EFE6"
+    color: "#F8F7F5"
     image: "assets/icon/icon_fg.png"
