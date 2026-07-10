@@ -505,15 +505,22 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
               child: Text('취소', style: AppTheme.sans(14, AppTheme.accentColor(context))),
             )
           else
-            IconButton(
-              icon: Icon(Icons.tune_rounded, color: ink),
-              tooltip: '결제·고정지출 관리',
-              onPressed: () async {
-                await Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => PaymentManagementScreen(showPayday: _profile.showsPaydayChip),
-                ));
-                _load();
-              },
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () async {
+                  await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => PaymentManagementScreen(showPayday: _profile.showsPaydayChip),
+                  ));
+                  _load();
+                },
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.tune_rounded, size: 15, color: AppTheme.accentColor(context)),
+                  const SizedBox(width: 4),
+                  Text('관리', style: AppTheme.sans(13, AppTheme.accentColor(context), weight: FontWeight.w700)),
+                ]),
+              ),
             ),
         ],
       ),

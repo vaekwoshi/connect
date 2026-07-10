@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../core/data/db_helper.dart';
 import '../../core/data/expense_item.dart';
 import '../../core/data/income_entry.dart';
@@ -88,6 +89,8 @@ class _AnnualBackfillScreenState extends State<AnnualBackfillScreen> {
     if (mounted) Navigator.pop(context, true);
   }
 
+  static final _fmt = NumberFormat('#,###');
+
   Widget _field(String label, TextEditingController c) {
     return Expanded(
       child: Padding(
@@ -102,6 +105,16 @@ class _AnnualBackfillScreenState extends State<AnnualBackfillScreen> {
             border: const OutlineInputBorder(),
           ),
           style: AppTheme.sans(13, AppTheme.ink(context)),
+          onChanged: (v) {
+            final n = v.replaceAll(',', '');
+            if (n.isEmpty) return;
+            final parsed = int.tryParse(n);
+            if (parsed == null) return;
+            final f = _fmt.format(parsed);
+            if (f != c.text) {
+              c.value = TextEditingValue(text: f, selection: TextSelection.collapsed(offset: f.length));
+            }
+          },
         ),
       ),
     );
@@ -121,7 +134,7 @@ class _AnnualBackfillScreenState extends State<AnnualBackfillScreen> {
           icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: sub),
           onPressed: () => Navigator.pop(context, false),
         ),
-        title: Text('지난 달 간단 입력', style: AppTheme.sans(16, ink, weight: FontWeight.w700)),
+        title: Text('올해 간단 입력', style: AppTheme.sans(16, ink, weight: FontWeight.w700)),
       ),
       body: _loading
           ? const SizedBox.shrink()

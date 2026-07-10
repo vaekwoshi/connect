@@ -326,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text('지난 달 기록이 비어있어요', style: AppTheme.sans(14, ink, weight: FontWeight.w700)),
                 const SizedBox(height: 4),
-                Text('간단히 채우면 이번 달 판정이 더 정확해져요 →', style: AppTheme.sans(12, accent)),
+                Text('간단히 채우면 올해 판정이 더 정확해져요 →', style: AppTheme.sans(12, accent)),
               ],
             ),
           ),

@@ -594,6 +594,7 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
             child: Text(
               '직장인은 급여만 기록해요. 근로 외 기타소득이 연 300만 원을 넘으면 '
               '종합과세 대상 — N잡러로 전환해 따로 기록하세요.',
+              textAlign: TextAlign.left,
               style: AppTheme.sans(12, sub, height: 1.45),
             ),
           ),
@@ -645,7 +646,7 @@ class _DayEntryScreenState extends State<DayEntryScreen> {
         const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.only(left: 58),
-          child: Text(hint, style: AppTheme.sans(12, sub, height: 1.4)),
+          child: Text(hint, textAlign: TextAlign.left, style: AppTheme.sans(12, sub, height: 1.4)),
         ),
       ],
     );
