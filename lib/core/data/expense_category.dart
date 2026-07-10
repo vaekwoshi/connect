@@ -22,6 +22,7 @@ const kExpenseCategories = [
   ExpenseCategory(id: '통신', label: '통신', icon: Icons.smartphone_outlined, color: Color(0xFF6B95B5)),
   ExpenseCategory(id: '주거/관리비', label: '주거/관리비', icon: Icons.home_outlined, color: Color(0xFF5B8C75)),
   ExpenseCategory(id: '보험/금융', label: '보험/금융', icon: Icons.account_balance_outlined, color: Color(0xFF4A7A62)),
+  ExpenseCategory(id: '기부', label: '기부', icon: Icons.volunteer_activism_outlined, color: Color(0xFFC65146)),
   ExpenseCategory(id: '기타', label: '기타', icon: Icons.more_horiz_rounded, color: Color(0xFF8E8B85)),
 ];
 

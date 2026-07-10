@@ -1435,6 +1435,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
     '의료/건강': '의료비 세액공제 (15%)',
     '교육':     '교육비 세액공제 (15%)',
     '보험/금융': '보험료 세액공제 (12%)',
+    '기부':     '기부금 세액공제 (15%, 1천만 초과분 30%)',
   };
 
   /// 지출 목표 설정/수정 — 분석 탭에서 직접 입력. 홈 화면은 표시 전용이라
@@ -1711,7 +1712,7 @@ class _ExpenseCalendarScreenState extends State<ExpenseCalendarScreen>
         ]),
         const SizedBox(height: 10),
         if (totalTaxDeduct == 0)
-          Text('의료비·교육비·보험료를 입력하면 공제 예상액을 볼 수 있어요.',
+          Text('의료비·교육비·보험료·기부금을 입력하면 공제 예상액을 볼 수 있어요.',
               style: AppTheme.sans(13, tert, height: 1.5))
         else
           for (final entry in taxCatAmounts.entries) ...[
