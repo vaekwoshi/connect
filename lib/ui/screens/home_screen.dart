@@ -11,8 +11,8 @@ import 'profile_input_screen.dart';
 import 'year_end_tax_screen.dart';
 import 'tax_simulator_screen.dart';
 import 'tax_persona_question_screen.dart';
-import 'financial_income_screen.dart';
 import 'expense_calendar_screen.dart';
+import 'missed_deduction_diagnosis_screen.dart';
 import 'annual_backfill_screen.dart';
 import 'tax_tools_screen.dart';
 import 'settings_screen.dart';
@@ -270,58 +270,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final profile = await dbService.getProfile();
       final healthEnrolled = profile?['health_enrolled'] == true;
       await ReminderScheduler.checkFreelancerHealthUninsured(healthEnrolled: healthEnrolled);
-    }
-    await _checkNjobConversion();
-  }
-
-  /// 직장인의 가계부 '기타수익'(근로소득 외) 연 누적이 300만원(기타소득금액 종합과세 기준,
-  /// 경비율 미적용 원액)을 넘으면 N잡러 전환을 물어본다. 연 1회, 거절 시 그 해엔 다시 안 물어봄.
-  Future<void> _checkNjobConversion() async {
-    if (_userType != '직장인') return;
-    final now = DateTime.now();
-    final declinedYear = await dbService.getAppState('njob_conversion_declined_year');
-    if (declinedYear == now.year.toString()) return;
-
-    double otherTotal = 0.0;
-    for (int m = 1; m <= now.month; m++) {
-      final entries = await dbService.getIncomeEntriesForMonth(now.year, m);
-      for (final e in entries) {
-        if (e.incomeType != '급여') otherTotal += e.amount;
-      }
-    }
-    if (otherTotal <= 3000000 || !mounted) return;
-
-    final ink = AppTheme.ink(context);
-    final sub = AppTheme.inkSecondary(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        title: Text('N잡러로 전환할까요?', style: AppTheme.sans(16, ink, weight: FontWeight.w700)),
-        content: Text(
-          '올해 근로소득 외 수익이 ${_toWon(otherTotal)}을 넘었어요.\n'
-          'N잡러로 전환하면 근로소득·기타수익을 나눠서 관리하고, 종합소득세 대상 여부도 챙길 수 있어요.',
-          style: AppTheme.sans(14, sub),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('나중에', style: AppTheme.sans(14, sub)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('전환할게요', style: AppTheme.sans(14, AppTheme.accentColor(ctx), weight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await dbService.setProfileTypeValues('N잡러', grossIncome: _grossIncome, expenseTarget: _expenseTarget);
-      _setUserType('N잡러');
-    } else {
-      await dbService.setAppState('njob_conversion_declined_year', now.year.toString());
     }
   }
 
@@ -1532,6 +1480,22 @@ class _HomeScreenState extends State<HomeScreen> {
           glyph: '율',
           onTap: () => _go(TaxSimulatorScreen(userType: _userType)),
         ));
+        final remaining = _grossIncome * 0.25 - _creditCardTotal;
+        cards.add(remaining > 0
+            ? _BannerCard(
+                label: '신카 공제',
+                headline: '공제 문턱까지\n${_toWanWon(remaining)} 남았어요',
+                action: '신용카드 공제 확인',
+                glyph: '카',
+                onTap: () => _go(YearEndTaxScreen(userType: _userType)),
+              )
+            : _BannerCard(
+                label: '신카 공제',
+                headline: '공제 문턱 돌파!\n체크카드로 2배 공제예요',
+                action: '연말정산 진단',
+                glyph: '↑',
+                onTap: () => _go(YearEndTaxScreen(userType: _userType)),
+              ));
       } else {
         cards.add(_BannerCard(
           label: '5월 신고',
@@ -1550,12 +1514,24 @@ class _HomeScreenState extends State<HomeScreen> {
       ]);
     } else if (_userType == 'N잡러') {
       cards.addAll([
-        _BannerCard(label: '건강보험', headline: '부업 2,000만 넘으면\n건보료가 따라와요', action: '기준 확인하기', glyph: '보', onTap: () => _go(const FinancialIncomeScreen())),
+        _BannerCard(label: '건강보험', headline: '부업 2,000만 넘으면\n건보료가 따라와요', action: '가계부에서 확인', glyph: '보', onTap: () => _go(const ExpenseCalendarScreen())),
       ]);
     } else {
       cards.addAll([
         _BannerCard(label: '경비율', headline: '장부를 쓰면 경비\n인정 폭이 넓어져요', action: '가계부 열기', glyph: '장', onTap: () => _go(const ExpenseCalendarScreen())),
       ]);
+    }
+
+    // 연말정산 시즌(1~2월, 회사 처리 전)에만 — 회사에 알리고 싶지 않은 공제를
+    // 미리 골라 5월 종소세로 직접 신고할 수 있다는 안내.
+    if (_isEmployee && DateTime.now().month <= 2) {
+      cards.add(_BannerCard(
+        label: '연말정산',
+        headline: '연말정산에서\n뺄 항목이 있나요?',
+        action: '빠진 공제 찾기',
+        glyph: '뺌',
+        onTap: () => _go(MissedDeductionDiagnosisScreen(userType: _userType)),
+      ));
     }
 
     cards.add(_BannerCard(

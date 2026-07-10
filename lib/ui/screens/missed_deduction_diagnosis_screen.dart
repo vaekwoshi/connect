@@ -104,7 +104,7 @@ class _MissedDeductionDiagnosisScreenState extends State<MissedDeductionDiagnosi
             const SizedBox(height: 12),
             Text('연말정산에 안 넣은\n공제를 골라보세요', style: AppTheme.serif(28, ink, spacing: -0.5, height: 1.2)),
             const SizedBox(height: 10),
-            Text('회사 연말정산 때 빠뜨린 공제를 고르면, 5월 종합소득세 신고로 얼마를 더 돌려받을 수 있는지 계산해드려요.',
+            Text('깜빡해서 빠뜨렸거나, 회사에 알리고 싶지 않아 일부러 뺀 공제를 고르면, 5월 종합소득세 신고로 얼마를 더 돌려받을 수 있는지 계산해드려요.',
                 style: AppTheme.sans(14, sub, height: 1.55)),
 
             // ── 기준 금액 ──

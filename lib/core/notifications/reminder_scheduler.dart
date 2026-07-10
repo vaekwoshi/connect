@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../security/notification_helper.dart';
 import '../data/db_helper.dart';
+import '../data/occupation_data.dart';
 import '../data/recurring_template.dart';
 import '../tax_engine/reserve_estimator.dart';
 import 'system_reminder_catalog.dart';
@@ -41,10 +42,14 @@ class ReminderScheduler {
     final profile = await dbService.getProfile();
     final ownsCar = profile?['owns_car'] ?? true;
     final ownsHouse = profile?['owns_house'] ?? true;
+    final occupationCode = profile?['occupation_code'] as String?;
+    final isVatExempt = OccupationData.occupations[occupationCode]?.isPersonalService ?? false;
 
     for (final s in kSystemReminderCatalog) {
       if (s.isEvent) continue; // 이벤트형(문턱)은 발생 시점에 show…로 처리
-      final active = s.appliesTo(userType, ownsCar: ownsCar, ownsHouse: ownsHouse) && isOn(s.key);
+      final active = s.appliesTo(userType,
+              ownsCar: ownsCar, ownsHouse: ownsHouse, isVatExempt: isVatExempt) &&
+          isOn(s.key);
       if (active) {
         String body = s.body;
         // 프리랜서·N잡러는 "5월 신고 준비" 알림에 예상 세금 대비 현재 적립 현황을 덧붙인다.
@@ -54,6 +59,12 @@ class ReminderScheduler {
         // 프리랜서·N잡러는 "5월 신고 시작" 알림에 3.3%/8.8% 원천징수 정산 안내를 덧붙인다.
         if (s.key == 'sys_may_start' && (userType == '프리랜서' || userType == 'N잡러')) {
           body = _appendWithholdingNote(body);
+        }
+        // 직장인은 근로소득만 있으면 연말정산으로 종결돼 5월 신고가 의무가 아니다 —
+        // 회사가 놓친 공제가 있을 때만 해당된다는 안내를 덧붙인다.
+        if ((s.key == 'sys_may_prep' || s.key == 'sys_may_start' || s.key == 'sys_may_dday') &&
+            userType == '직장인') {
+          body = _appendEmployeeOptionalNote(body);
         }
         await notificationHelper.scheduleAtDate(
           id: s.notifId,
@@ -70,6 +81,12 @@ class ReminderScheduler {
   /// "5월 신고 시작" 알림 본문에 3.3%/8.8% 원천징수 정산(환급/추가납부) 안내를 덧붙인다.
   static String _appendWithholdingNote(String baseBody) {
     return '$baseBody 사업소득(3.3%)·기타소득(8.8%)으로 미리 낸 세금은 실제 세액과 정산돼 돌려받거나(환급) 더 낼(추가납부) 수 있어요.';
+  }
+
+  /// 직장인의 5월 종소세 알림에 대상 여부 안내를 덧붙인다 — 회사가 놓친 공제뿐 아니라
+  /// 회사에 알리고 싶지 않아 연말정산에서 일부러 뺀 공제도 이때 직접 신고할 수 있다.
+  static String _appendEmployeeOptionalNote(String baseBody) {
+    return '$baseBody 회사가 놓친 공제나, 회사에 알리고 싶지 않아 일부러 뺀 공제가 있다면 이때 직접 신고하세요.';
   }
 
   /// "5월 신고 준비" 알림 본문에 예상 세금 대비 현재 적립 현황을 덧붙인다.
@@ -281,7 +298,7 @@ class ReminderScheduler {
     await notificationHelper.scheduleNotification(
       id: idFreelancerHealthUninsured,
       title: '건강보험 지역가입자 등록을 확인해보세요',
-      body: '프리랜서는 건강보험을 스스로 가입해야 해요. 내 정보에서 미가입으로 표시돼 있어요 — 지역가입자 등록을 하셨는지 확인해보세요.',
+      body: '프리랜서는 건강보험을 스스로 가입해야 해요. 내 정보에서 미가입으로 표시돼 있어요 — 지역가입자 등록을 하셨는지 확인해보세요. (배우자 등 가족의 피부양자로 등재돼 있다면 해당 없어요.)',
       delay: target.difference(now),
     );
   }

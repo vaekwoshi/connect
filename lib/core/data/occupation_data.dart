@@ -1564,4 +1564,7 @@ class OccupationInfo {
     required this.standardRate,
     this.keywords = '',
   });
+
+  /// 인적용역(사업서비스업 등 94xxx) — 부가가치세 면세 대상.
+  bool get isPersonalService => keywords.contains('인적용역');
 }

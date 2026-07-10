@@ -6,6 +6,7 @@ import '../../core/notifications/system_reminder_catalog.dart';
 import '../../core/notifications/reminder_scheduler.dart';
 import '../../core/security/notification_helper.dart';
 import '../../core/data/db_helper.dart';
+import '../../core/data/occupation_data.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   final String userType;
@@ -22,6 +23,7 @@ class _NotificationSettingsScreenState
   bool _loading = true;
   bool _ownsCar = true;
   bool _ownsHouse = true;
+  bool _isVatExempt = false;
 
   @override
   void initState() {
@@ -37,6 +39,9 @@ class _NotificationSettingsScreenState
       _settings = s;
       _ownsCar = profile?['owns_car'] ?? true;
       _ownsHouse = profile?['owns_house'] ?? true;
+      _isVatExempt = OccupationData.occupations[profile?['occupation_code'] as String?]
+              ?.isPersonalService ??
+          false;
       _loading = false;
     });
   }
@@ -95,7 +100,8 @@ class _NotificationSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final ink = AppTheme.ink(context);
-    final sys = systemRemindersFor(widget.userType, ownsCar: _ownsCar, ownsHouse: _ownsHouse);
+    final sys = systemRemindersFor(widget.userType,
+        ownsCar: _ownsCar, ownsHouse: _ownsHouse, isVatExempt: _isVatExempt);
     final deadlines =
         sys.where((s) => s.category == SysCategory.deadline).toList();
     final thresholds =

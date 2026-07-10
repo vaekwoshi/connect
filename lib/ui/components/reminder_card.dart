@@ -5,6 +5,7 @@ import '../../core/notifications/reminder.dart';
 import '../../core/notifications/custom_reminder_service.dart';
 import '../../core/notifications/system_reminder_catalog.dart';
 import '../../core/data/db_helper.dart';
+import '../../core/data/occupation_data.dart';
 import '../screens/reminder_list_screen.dart';
 
 /// 홈 — 사용자 맞춤 리마인더 아코디언 카드 (지출 카드와 절세 카드 사이).
@@ -33,6 +34,7 @@ class _ReminderCardState extends State<ReminderCard> {
   bool _loading = true;
   bool _ownsCar = true;
   bool _ownsHouse = true;
+  bool _isVatExempt = false;
 
   @override
   void initState() {
@@ -50,6 +52,9 @@ class _ReminderCardState extends State<ReminderCard> {
       _sysSettings = settings;
       _ownsCar = profile?['owns_car'] ?? true;
       _ownsHouse = profile?['owns_house'] ?? true;
+      _isVatExempt = OccupationData.occupations[profile?['occupation_code'] as String?]
+              ?.isPersonalService ??
+          false;
       _loading = false;
     });
   }
@@ -76,7 +81,8 @@ class _ReminderCardState extends State<ReminderCard> {
       cands.add(_Upcoming(when, r.title, label));
     }
     // 시스템 기한 알림 (없으면 ON)
-    for (final s in systemRemindersFor(widget.userType, ownsCar: _ownsCar, ownsHouse: _ownsHouse)) {
+    for (final s in systemRemindersFor(widget.userType,
+        ownsCar: _ownsCar, ownsHouse: _ownsHouse, isVatExempt: _isVatExempt)) {
       if (s.isEvent) continue;
       if (_sysSettings[s.key] == false) continue;
       var when = DateTime(now.year, s.month!, s.day!, s.hour);

@@ -59,6 +59,7 @@ class SystemReminder {
   final bool business;     // 프리랜서·N잡러 대상
   final bool requiresCar;   // 차량 보유자에게만 해당
   final bool requiresHouse; // 주택 보유자에게만 해당
+  final bool requiresVatLiable; // 부가세 과세 대상만(인적용역 면세 업종은 제외)
 
   const SystemReminder({
     required this.key,
@@ -76,15 +77,18 @@ class SystemReminder {
     this.business = false,
     this.requiresCar = false,
     this.requiresHouse = false,
+    this.requiresVatLiable = false,
   });
 
   bool get isEvent => month == null || day == null;
 
-  bool appliesTo(String userType, {bool ownsCar = true, bool ownsHouse = true}) {
+  bool appliesTo(String userType,
+      {bool ownsCar = true, bool ownsHouse = true, bool isVatExempt = false}) {
     final isEmp = userType == '직장인' || userType == 'N잡러';
     final isBiz = userType == '프리랜서' || userType == 'N잡러';
     if (requiresCar && !ownsCar) return false;
     if (requiresHouse && !ownsHouse) return false;
+    if (requiresVatLiable && isVatExempt) return false;
     return (employee && isEmp) || (business && isBiz);
   }
 }
@@ -98,7 +102,7 @@ const List<SystemReminder> kSystemReminderCatalog = [
     category: SysCategory.deadline,
     group: 'year_end',
     title: '연말정산 시즌이 왔어요',
-    body: '홈택스 간소화 자료가 열렸어요. 서류 체크리스트도 미리 확인해보세요.',
+    body: '홈택스 간소화 자료가 열렸어요. 서류 체크리스트도 미리 확인해보세요. 회사에 알리고 싶지 않은 항목이 있다면 지금 골라두면 5월에 직접 신고할 수 있어요.',
     scheduleLabel: '매년 1월 15일',
     month: 1, day: 15,
     employee: true,
@@ -109,7 +113,7 @@ const List<SystemReminder> kSystemReminderCatalog = [
     category: SysCategory.deadline,
     group: 'year_end',
     title: '연말정산 추가 환급, 아직 늦지 않았어요',
-    body: '3/10까지 — 회사에 못 낸 공제를 직접 신고해 돌려받으세요.',
+    body: '회사가 지급명세서를 제출하는 3/10 전이라면 아직 늦지 않았어요 — 담당자에게 놓친 공제를 정정해 다시 제출해달라고 요청해보세요.',
     scheduleLabel: '매년 3월 5일',
     month: 3, day: 5,
     employee: true,
@@ -333,6 +337,7 @@ const List<SystemReminder> kSystemReminderCatalog = [
     scheduleLabel: '매년 1월 20일',
     month: 1, day: 20,
     business: true,
+    requiresVatLiable: true,
   ),
   SystemReminder(
     key: 'sys_vat_jul',
@@ -344,6 +349,7 @@ const List<SystemReminder> kSystemReminderCatalog = [
     scheduleLabel: '매년 7월 20일',
     month: 7, day: 20,
     business: true,
+    requiresVatLiable: true,
   ),
   SystemReminder(
     key: 'sys_midprepay',
@@ -429,9 +435,10 @@ const List<SystemReminder> kSystemReminderCatalog = [
 
 /// 유형에 해당하는 시스템 알림만.
 List<SystemReminder> systemRemindersFor(String userType,
-        {bool ownsCar = true, bool ownsHouse = true}) =>
+        {bool ownsCar = true, bool ownsHouse = true, bool isVatExempt = false}) =>
     kSystemReminderCatalog
-        .where((s) => s.appliesTo(userType, ownsCar: ownsCar, ownsHouse: ownsHouse))
+        .where((s) => s.appliesTo(userType,
+            ownsCar: ownsCar, ownsHouse: ownsHouse, isVatExempt: isVatExempt))
         .toList();
 
 SystemReminder? systemReminderByKey(String key) {

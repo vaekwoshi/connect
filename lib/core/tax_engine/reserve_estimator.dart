@@ -130,7 +130,22 @@ class ReserveEstimator {
     final maxMonthlyTaxReserve = maxAnnualTax / 12;
 
     double insuranceReserve = 0;
-    if (pensionEnrolled || healthEnrolled || employmentEnrolled || industrialEnrolled) {
+    if (userType == 'N잡러') {
+      // N잡러는 이미 직장가입자 — 국민연금·건강보험을 지역가입자처럼 스스로 내지 않는다.
+      // 부업(사업+기타)소득이 연 2,000만원을 넘는 분에 대해서만 건보 소득월액보험료가 추가 부과된다.
+      final annualBusinessIncome = ((ytdBusinessIncome + ytdOtherIncome) / now.month) * 12;
+      final extra = InsuranceEngine.calculateNJobExtraInsurance(annualBusinessIncome);
+      insuranceReserve += extra.totalMonthlyExtraPremium;
+      if (employmentEnrolled || industrialEnrolled) {
+        final ins = InsuranceEngine.calculateFreelancerInsurance(
+          annualIncome: annualBusinessIncome,
+          propertyValue: propertyValue,
+          occupationCode: hasOccupation ? occupationCode : null,
+        );
+        if (employmentEnrolled) insuranceReserve += ins.employmentInsurance;
+        if (industrialEnrolled) insuranceReserve += ins.industrialAccident;
+      }
+    } else if (pensionEnrolled || healthEnrolled || employmentEnrolled || industrialEnrolled) {
       final annualBusinessIncome = ((ytdBusinessIncome + ytdOtherIncome) / now.month) * 12;
       final ins = InsuranceEngine.calculateFreelancerInsurance(
         annualIncome: annualBusinessIncome,

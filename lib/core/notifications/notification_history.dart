@@ -1,4 +1,5 @@
 import '../data/db_helper.dart';
+import '../data/occupation_data.dart';
 import 'custom_reminder_service.dart';
 import 'reminder.dart';
 import 'system_reminder_catalog.dart';
@@ -54,10 +55,14 @@ class NotificationHistory {
     final profile = await dbService.getProfile();
     final ownsCar = profile?['owns_car'] ?? true;
     final ownsHouse = profile?['owns_house'] ?? true;
+    final occupationCode = profile?['occupation_code'] as String?;
+    final isVatExempt = OccupationData.occupations[occupationCode]?.isPersonalService ?? false;
 
     for (final s in kSystemReminderCatalog) {
       if (s.isEvent) continue; // 이벤트형(문턱 등)은 즉시 알림이라 이미 기록됨.
-      if (!s.appliesTo(userType, ownsCar: ownsCar, ownsHouse: ownsHouse) || !isOn(s.key)) continue;
+      if (!s.appliesTo(userType,
+              ownsCar: ownsCar, ownsHouse: ownsHouse, isVatExempt: isVatExempt) ||
+          !isOn(s.key)) continue;
       for (final when in _systemOccurrences(s, from, to)) {
         await dbService.insertNotificationLog(
           title: s.title,
