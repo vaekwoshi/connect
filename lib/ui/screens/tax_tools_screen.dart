@@ -261,31 +261,6 @@ class _TaxToolsMenuState extends State<TaxToolsMenu> {
     );
   }
 
-  Widget _quickRow(BuildContext context, TaxItem item) {
-    final ink = AppTheme.ink(context);
-    final sub = AppTheme.inkSecondary(context);
-    final tert = AppTheme.inkTertiary(context);
-    return GestureDetector(
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => item.build(userType))),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(item.title, style: AppTheme.sans(15, ink, weight: FontWeight.w700, spacing: -0.2)),
-              const SizedBox(height: 3),
-              Text(item.subtitle, style: AppTheme.sans(12, sub, height: 1.4)),
-            ]),
-          ),
-          const SizedBox(width: 8),
-          Icon(Icons.chevron_right_rounded, size: 20, color: tert),
-        ]),
-      ),
-    );
-  }
-
 }
 
 // ── 데이터 모델 (홈과 공유) ──────────────────────────────────────────

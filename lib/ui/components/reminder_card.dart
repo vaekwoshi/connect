@@ -3,9 +3,6 @@ import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../../core/notifications/reminder.dart';
 import '../../core/notifications/custom_reminder_service.dart';
-import '../../core/notifications/system_reminder_catalog.dart';
-import '../../core/data/db_helper.dart';
-import '../../core/data/occupation_data.dart';
 import '../screens/reminder_list_screen.dart';
 
 /// 홈 — 사용자 맞춤 리마인더 아코디언 카드 (지출 카드와 절세 카드 사이).
@@ -19,22 +16,9 @@ class ReminderCard extends StatefulWidget {
   State<ReminderCard> createState() => _ReminderCardState();
 }
 
-/// 카드 요약용 — 다음에 울릴 알림 한 건(사용자+시스템 통합).
-class _Upcoming {
-  final DateTime when;
-  final String title;
-  final String label; // D-day 또는 주기 라벨
-  const _Upcoming(this.when, this.title, this.label);
-}
-
 class _ReminderCardState extends State<ReminderCard> {
   List<Reminder> _reminders = [];
-  Map<String, bool> _sysSettings = {};
   bool _expanded = true;
-  bool _loading = true;
-  bool _ownsCar = true;
-  bool _ownsHouse = true;
-  bool _isVatExempt = false;
 
   @override
   void initState() {
@@ -44,18 +28,9 @@ class _ReminderCardState extends State<ReminderCard> {
 
   Future<void> _load() async {
     final list = await customReminderService.list();
-    final settings = await dbService.getReminderSettings();
-    final profile = await dbService.getProfile();
     if (!mounted) return;
     setState(() {
       _reminders = list;
-      _sysSettings = settings;
-      _ownsCar = profile?['owns_car'] ?? true;
-      _ownsHouse = profile?['owns_house'] ?? true;
-      _isVatExempt = OccupationData.occupations[profile?['occupation_code'] as String?]
-              ?.isPersonalService ??
-          false;
-      _loading = false;
     });
   }
 
@@ -67,31 +42,6 @@ class _ReminderCardState extends State<ReminderCard> {
     if (diff == 0) return 'D-DAY';
     if (diff > 0) return 'D-$diff';
     return '지남';
-  }
-
-  /// 사용자 + 시스템(기한) 알림을 합쳐 가장 가까운 다음 한 건.
-  _Upcoming? get _next {
-    final cands = <_Upcoming>[];
-    // 사용자 알림 (만료된 단발 알림 제외)
-    final now = DateTime.now();
-    for (final r in _reminders.where((r) => r.enabled)) {
-      final when = CustomReminderService.nextInstance(r);
-      if (r.frequency == ReminderFrequency.once && !when.isAfter(now)) continue;
-      final label = r.frequency == ReminderFrequency.once ? _ddayFor(when) : r.frequency.label;
-      cands.add(_Upcoming(when, r.title, label));
-    }
-    // 시스템 기한 알림 (없으면 ON)
-    for (final s in systemRemindersFor(widget.userType,
-        ownsCar: _ownsCar, ownsHouse: _ownsHouse, isVatExempt: _isVatExempt)) {
-      if (s.isEvent) continue;
-      if (_sysSettings[s.key] == false) continue;
-      var when = DateTime(now.year, s.month!, s.day!, s.hour);
-      if (!when.isAfter(now)) when = DateTime(now.year + 1, s.month!, s.day!, s.hour);
-      cands.add(_Upcoming(when, s.title, _ddayFor(when)));
-    }
-    if (cands.isEmpty) return null;
-    cands.sort((a, b) => a.when.compareTo(b.when));
-    return cands.first;
   }
 
   String _timeLabel(Reminder r) {
