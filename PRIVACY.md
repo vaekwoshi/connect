@@ -51,7 +51,7 @@
 
 ## 8. 문의
 
-개인정보 관련 문의: **ved9an@gmail.com**
+개인정보 관련 문의: **prismlayerd@gmail.com**
 
 ---
 
