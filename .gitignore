@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Stray literal '~' dir (accidentally nested Claude Code skill checkout, broke GitHub Pages checkout)
+/~
